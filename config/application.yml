@@ -1,0 +1,14 @@
+application:
+  name: AI Agent Enterprise
+  version: 1.0.0
+  env: dev
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+server:
+  host: localhost
+  port: 8081
+llm:
+  base_url: ${LLM_BASE_URL}
+  api_key: ${LLM_API_KEY}
+  model_name: ${LLM_MODEL_NAME}
