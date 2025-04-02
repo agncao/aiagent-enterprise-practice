@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 from typing import Any, Optional
 from infrastructure.config import config
 
@@ -49,8 +50,9 @@ class Logger:
         if not self.logger.handlers:
             handler = logging.StreamHandler()
             
-            # 从配置中获取日志格式
-            log_format = config.get('logging.format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            # 从配置中获取日志格式，添加模块名和代码行号
+            default_format = '%(asctime)s - %(name)s - %(levelname)s - [%(caller_file)s:%(caller_line)d] - %(message)s'
+            log_format = config.get('logging.format', default_format)
             formatter = logging.Formatter(log_format)
             handler.setFormatter(formatter)
             
@@ -69,82 +71,105 @@ class Logger:
         
         Args:
             message: 日志消息模板
-            args: 要替换占位符的参数
+            args: 替换占位符的参数
             
         Returns:
-            str: 格式化后的日志消息
+            str: 格式化后的消息
         """
         if not args:
             return message
         
-        # 将 {} 占位符替换为 %s 以便与 Python 的字符串格式化兼容
-        message = message.replace('{}', '%s')
-        
+        # 处理可能的异常情况
         try:
-            return message % args
-        except (TypeError, ValueError):
+            return message.format(*args)
+        except Exception:
+            # 如果格式化失败，直接拼接
             return message + " " + " ".join(str(arg) for arg in args)
     
-    def debug(self, message: str, *args: Any) -> None:
+    def _log(self, level: int, message: str, *args: Any):
+        """
+        记录日志的内部方法
+        
+        Args:
+            level: 日志级别
+            message: 日志消息
+            args: 格式化参数
+        """
+        # 获取调用者的堆栈信息
+        frame = sys._getframe(2)  # 跳过 debug/info/warn/error 和 _log 方法
+        file_path = frame.f_code.co_filename
+        line_no = frame.f_lineno
+        
+        # 获取相对路径，使日志更简洁
+        try:
+            project_root = config.get_project_root()
+            if file_path.startswith(str(project_root)):
+                file_path = os.path.relpath(file_path, str(project_root))
+        except Exception:
+            # 如果获取相对路径失败，使用原始路径
+            pass
+        
+        # 格式化消息
+        formatted_message = self._format_message(message, *args)
+        
+        # 使用自定义字段名称，避免与内置字段冲突
+        extra = {
+            'caller_file': file_path,
+            'caller_line': line_no
+        }
+        
+        # 记录日志
+        self.logger.log(level, formatted_message, extra=extra)
+    
+    def debug(self, message: str, *args: Any):
         """
         记录调试级别日志
         
         Args:
             message: 日志消息
-            args: 要替换占位符的参数
+            args: 格式化参数
         """
-        self.logger.debug(self._format_message(message, *args))
+        self._log(logging.DEBUG, message, *args)
     
-    def info(self, message: str, *args: Any) -> None:
+    def info(self, message: str, *args: Any):
         """
         记录信息级别日志
         
         Args:
             message: 日志消息
-            args: 要替换占位符的参数
+            args: 格式化参数
         """
-        self.logger.info(self._format_message(message, *args))
+        self._log(logging.INFO, message, *args)
     
-    def warning(self, message: str, *args: Any) -> None:
+    def warn(self, message: str, *args: Any):
         """
         记录警告级别日志
         
         Args:
             message: 日志消息
-            args: 要替换占位符的参数
+            args: 格式化参数
         """
-        self.logger.warning(self._format_message(message, *args))
+        self._log(logging.WARNING, message, *args)
     
-    def error(self, message: str, *args: Any) -> None:
+    def error(self, message: str, *args: Any):
         """
         记录错误级别日志
         
         Args:
             message: 日志消息
-            args: 要替换占位符的参数
+            args: 格式化参数
         """
-        self.logger.error(self._format_message(message, *args))
+        self._log(logging.ERROR, message, *args)
     
-    def critical(self, message: str, *args: Any) -> None:
+    def critical(self, message: str, *args: Any):
         """
         记录严重错误级别日志
         
         Args:
             message: 日志消息
-            args: 要替换占位符的参数
+            args: 格式化参数
         """
-        self.logger.critical(self._format_message(message, *args))
-    
-    def exception(self, message: str, *args: Any, exc_info: bool = True) -> None:
-        """
-        记录异常信息
-        
-        Args:
-            message: 日志消息
-            args: 要替换占位符的参数
-            exc_info: 是否包含异常信息
-        """
-        self.logger.exception(self._format_message(message, *args), exc_info=exc_info)
+        self._log(logging.CRITICAL, message, *args)
 
 
 # 创建一个全局日志对象，方便直接导入使用

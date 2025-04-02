@@ -4,7 +4,7 @@ application:
   env: dev
 logging:
   level: INFO
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s - %(name)s - %(levelname)s - [%(caller_file)s:%(caller_line)d] - %(message)s"
 server:
   host: localhost
   port: 8081
