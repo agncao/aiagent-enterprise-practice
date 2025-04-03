@@ -11,10 +11,16 @@ from infrastructure.logger import log
 
 class BaseAssistant(ABC):
     def __init__(self, llm):
+        """
+        初始化助理
+        
+        Args:
+            llm: 语言模型
+        """
         self.llm = llm
         self.tools = []
+        self.state = {"messages": []}
         self.worker = None
-        self.state = State(messages=[])
 
     def get_system_prompt(self):
         pass
@@ -24,16 +30,20 @@ class BaseAssistant(ABC):
 
     def agent_node(self, state: State):
         """
-        执行助理节点的逻辑
-        - 执行航班信息查询入参校验工具
-        - 如果入参校验通过，则执行search_flights工具查询航班信息
-        - 如果入参校验不通过，则向用户请求缺失的信息
+        代理节点，处理用户输入，调用LLM生成回复
+        
         Args:
-            state (BaseState): 当前状态
+            state (State): 当前状态
+        
         Returns:
-            BaseState: 更新后的状态
+            dict: 包含messages和next字段的字典
         """
-        feedback = {"messages": [],"params_ready": False}
+        log.debug("进入agent_node，当前状态: {}", state)
+        
+        # 初始化反馈信息
+        feedback = {"messages": [], "params_ready": False}
+        
+        # 如果最后一条消息不是用户消息，则添加用户输入
         if not (len(state["messages"]) > 0 and isinstance(state["messages"][-1], HumanMessage)):
             feedback["messages"].append(HumanMessage(content=state["user_input"]))
         
@@ -43,38 +53,27 @@ class BaseAssistant(ABC):
             response = agent.invoke({"user_input": state["user_input"]})
             log.debug("agent_node Agent执行结果: {}", response)
             
-            # 检查是否有工具调用
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                log.debug("agent 工具调用: {}", response.tool_calls)
-
-                # 如果有工具调用，添加一个系统消息告知用户
-                tool_calls = [e for e in response.tool_calls]
-                # List comprehension for newer ChatOpenAI versions
-                tool_names = [
-                    tool_call['name'] if isinstance(tool_call, dict) and 'name' in tool_call
-                    else tool_call.name if hasattr(tool_call, 'name')
-                    else None
-                    for tool_call in response.tool_calls
-                ]
-                
-                if tool_names and "search_flights" in tool_names:
-                    feedback["params_ready"] = True
-                
-                # 添加工具调用消息
-                feedback["messages"].append(AIMessage(content=response.content, tool_calls=response.tool_calls))
-            else:
-                # 如果没有工具调用，只添加普通消息
-                feedback["messages"].append(AIMessage(content=response.content))
+            # 添加回复到消息列表
+            if "output" in response:
+                feedback["messages"].append(AIMessage(content=response["output"]))
+            
+            # 检查是否需要执行工具
+            feedback["next"] = "tools"
+            
         except Exception as e:
-            log.error("Agent执行出错: {}", str(e))
-            raise e
+            log.error("代理执行器执行出错: {}", str(e))
+            # 添加错误消息
+            feedback["messages"].append(AIMessage(content="抱歉，我遇到了一些问题，请稍后再试。"))
+            feedback["next"] = "end"
+        
+        log.debug("agent_node执行完毕，反馈信息: {}", feedback)
         return feedback
 
-    def _create_agent_executor(self) -> Runnable:
+    def _create_agent_executor(self):
         """
-        创建助理的代理执行器
+        创建代理执行器
+        
         Returns:
-            代理执行器
         """
         # 确保工具列表不为空
         if not self.tools:
