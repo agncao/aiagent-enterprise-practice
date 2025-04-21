@@ -1,4 +1,4 @@
-from app.agent.assistant_type import AssistantType
+from agent.assistant_type import AssistantType
 from infrastructure.config import config
 from langchain_openai import ChatOpenAI
 
@@ -32,16 +32,16 @@ class AssistantRouter:
         
         # 根据助理类型创建对应的助理实例
         if assistant_type == AssistantType.FLIGHT:
-            from app.agent.flight.flight_assistant import FlightAssistant
+            from agent.flight.flight_assistant import FlightAssistant
             return FlightAssistant(llm)
         elif assistant_type == AssistantType.HOTEL:
             # 未来实现
-            # from app.agent.hotel.hotel_assistant import HotelAssistant
+            # from agent.hotel.hotel_assistant import HotelAssistant
             # return HotelAssistant(llm)
             raise NotImplementedError("Hotel assistant not implemented yet")
         elif assistant_type == AssistantType.CAR:
             # 未来实现
-            # from app.agent.car.car_assistant import CarAssistant
+            # from agent.car.car_assistant import CarAssistant
             # return CarAssistant(llm)
             raise NotImplementedError("Car assistant not implemented yet")
         else:

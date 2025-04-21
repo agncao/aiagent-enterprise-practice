@@ -2,7 +2,7 @@ from certifi import contents
 from langchain_core.messages import AIMessage
 from typing_extensions import override
 from langgraph import graph
-from app.agent.state import State
+from agent.state import State
 from infrastructure.config import config
 from service.flight_service import FlightService
 import time
@@ -10,8 +10,8 @@ from langgraph.graph import StateGraph, END
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
-from app.agent.base_assistant import BaseAssistant
-from app.agent.assistant_type import AssistantType
+from agent.base_assistant import BaseAssistant
+from agent.assistant_type import AssistantType
 from infrastructure.logger import log
 
 class FlightAssistant(BaseAssistant):

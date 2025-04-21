@@ -57,16 +57,3 @@ class DatabaseManager:
         """创建所有表"""
         Base.metadata.create_all(self.engine)
         logger.info("数据库表创建成功")
-    
-    def get_session(self):
-        """获取数据库会话"""
-        return self.Session()
-    
-    def close_session(self, session):
-        """关闭数据库会话"""
-        if session:
-            session.close()
-    
-    def close_all_sessions(self):
-        """关闭所有会话"""
-        self.Session.remove()

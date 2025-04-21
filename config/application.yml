@@ -6,8 +6,11 @@ logging:
   level: INFO
   format: "%(asctime)s - %(name)s - %(levelname)s - [%(caller_file)s:%(caller_line)d] - %(message)s"
 server:
-  host: localhost
-  port: 8081
+  host: ${SERVER_HOST}
+  port: ${SERVER_PORT}
+api: 
+  version: v1
+  prefix: /api
 llm:
   base_url: ${LLM_BASE_URL}
   api_key: ${LLM_API_KEY}

@@ -14,6 +14,7 @@ from repository.models.flights import Flight
 from repository.models.tickets import Ticket
 from repository.models.ticket_flights import TicketFlight
 from repository.models.boarding_passes import BoardingPass
+from infrastructure.logger import log
 
 class FlightRepository:
     """航班仓储类，提供航班和机票相关的数据访问方法"""
@@ -30,7 +31,7 @@ class FlightRepository:
         if not passenger_id:
             raise ValueError("未配置乘客 ID。")
 
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 使用SQLAlchemy查询
             results = (
@@ -68,7 +69,7 @@ class FlightRepository:
             
             return flight_info
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def search_flights(
@@ -92,7 +93,7 @@ class FlightRepository:
         返回:
             匹配条件的航班信息列表。
         """
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 构建查询
             query = session.query(Flight)
@@ -134,8 +135,11 @@ class FlightRepository:
                 results.append(flight_dict)
             
             return results
+        except Exception as e:
+            session.rollback()
+            raise e
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def update_ticket_to_new_flight(
@@ -163,7 +167,7 @@ class FlightRepository:
         if not passenger_id:
             raise ValueError("未配置乘客 ID。")
 
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 查询新航班的信息
             new_flight = session.query(Flight).filter(Flight.flight_id == new_flight_id).first()
@@ -210,7 +214,7 @@ class FlightRepository:
             session.rollback()
             return f"更新机票时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def cancel_ticket(ticket_no: str, *, config: RunnableConfig) -> str:
@@ -233,7 +237,7 @@ class FlightRepository:
         if not passenger_id:
             raise ValueError("未配置乘客 ID。")
 
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 查询给定机票号是否存在
             ticket_flight = session.query(TicketFlight).filter(
@@ -259,4 +263,4 @@ class FlightRepository:
             session.rollback()
             return f"取消机票时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()

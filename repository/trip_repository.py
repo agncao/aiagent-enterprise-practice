@@ -29,7 +29,7 @@ class TripRepository:
         返回:
             List[Dict]: 包含匹配搜索条件的旅行推荐字典列表。
         """
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 构建查询
             query = session.query(TripRecommendation)
@@ -69,7 +69,7 @@ class TripRepository:
             
             return results
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def book_excursion(recommendation_id: int) -> str:
@@ -82,7 +82,8 @@ class TripRepository:
         返回:
             str: 表明旅行推荐是否成功预订的消息。
         """
-        session = DatabaseManager.get_session()
+
+        session = DatabaseManager().Session()
         try:
             # 查询旅行推荐
             recommendation = session.query(TripRecommendation).filter(
@@ -101,7 +102,7 @@ class TripRepository:
             session.rollback()
             return f"预订旅行推荐时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def update_excursion(recommendation_id: int, details: str) -> str:
@@ -115,7 +116,8 @@ class TripRepository:
         返回:
             str: 表明旅行推荐是否成功更新的消息。
         """
-        session = DatabaseManager.get_session()
+
+        session = DatabaseManager().Session()
         try:
             # 查询旅行推荐
             recommendation = session.query(TripRecommendation).filter(
@@ -134,7 +136,7 @@ class TripRepository:
             session.rollback()
             return f"更新旅行推荐时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def cancel_excursion(recommendation_id: int) -> str:
@@ -147,7 +149,8 @@ class TripRepository:
         返回:
             str: 表明旅行推荐是否成功取消的消息。
         """
-        session = DatabaseManager.get_session()
+
+        session = DatabaseManager().Session()
         try:
             # 查询旅行推荐
             recommendation = session.query(TripRecommendation).filter(
@@ -166,4 +169,4 @@ class TripRepository:
             session.rollback()
             return f"取消旅行推荐时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()

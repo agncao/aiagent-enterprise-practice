@@ -11,6 +11,7 @@ from pathlib import Path
 
 # 定义项目根目录的绝对路径
 PROJECT_ROOT = Path(__file__).parent.absolute()
+print(PROJECT_ROOT)
 
 # 将项目根目录添加到Python路径
 if str(PROJECT_ROOT) not in sys.path:

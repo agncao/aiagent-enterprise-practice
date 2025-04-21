@@ -31,7 +31,7 @@ class HotelRepository:
         返回:
             List[Dict]: 包含匹配搜索条件的酒店信息的字典列表。
         """
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 构建查询
             query = session.query(Hotel)
@@ -65,7 +65,7 @@ class HotelRepository:
             print('查询酒店的结果: ', results)
             return results
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def book_hotel(hotel_id: int) -> str:
@@ -78,7 +78,7 @@ class HotelRepository:
         返回:
             str: 表明酒店是否成功预订的消息。
         """
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 查询酒店
             hotel = session.query(Hotel).filter(Hotel.id == hotel_id).first()
@@ -95,7 +95,7 @@ class HotelRepository:
             session.rollback()
             return f"预订酒店时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def update_hotel(
@@ -114,7 +114,7 @@ class HotelRepository:
         返回:
             str: 表明酒店预订是否成功更新的消息。
         """
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 查询酒店
             hotel = session.query(Hotel).filter(Hotel.id == hotel_id).first()
@@ -136,7 +136,7 @@ class HotelRepository:
             session.rollback()
             return f"更新酒店预订时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()
 
     @staticmethod
     def cancel_hotel(hotel_id: int) -> str:
@@ -149,7 +149,7 @@ class HotelRepository:
         返回:
             str: 表明酒店预订是否成功取消的消息。
         """
-        session = DatabaseManager.get_session()
+        session = DatabaseManager().Session()
         try:
             # 查询酒店
             hotel = session.query(Hotel).filter(Hotel.id == hotel_id).first()
@@ -166,4 +166,4 @@ class HotelRepository:
             session.rollback()
             return f"取消酒店预订时发生错误: {str(e)}"
         finally:
-            DatabaseManager.close_session(session)
+            session.close()

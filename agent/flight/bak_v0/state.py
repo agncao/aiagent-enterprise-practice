@@ -1,4 +1,4 @@
-from app.agent.assistant_type import AssistantType
+from agent.assistant_type import AssistantType
 from app.utils.base_state import BaseState
 
 # 扩展的助理状态类

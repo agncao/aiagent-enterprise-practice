@@ -1,9 +1,9 @@
 # app/agent/executor.py (修正拼写)
-from app.agent.router import AssistantRouter
-from app.agent.flight.flight_assistant import FlightAssistant
+from agent.router import AssistantRouter
+from agent.flight.flight_assistant import FlightAssistant
 # 未来会导入其他助理
-# from app.agent.hotel.hotel_assistant import HotelAssistant
-# from app.agent.car.car_assistant import CarAssistant
+# from agent.hotel.hotel_assistant import HotelAssistant
+# from agent.car.car_assistant import CarAssistant
 
 class AssistantExecutor:
     def __init__(self, llm):
@@ -11,11 +11,11 @@ class AssistantExecutor:
 
 
 # # app/agent/executor.py (修正拼写)
-# from app.agent.router import AssistantRouter
-# from app.agent.flight.flight_assistant import FlightAssistant
+# from agent.router import AssistantRouter
+# from agent.flight.flight_assistant import FlightAssistant
 # # 未来会导入其他助理
-# # from app.agent.hotel.hotel_assistant import HotelAssistant
-# # from app.agent.car.car_assistant import CarAssistant
+# # from agent.hotel.hotel_assistant import HotelAssistant
+# # from agent.car.car_assistant import CarAssistant
 
 # class AssistantExecutor:
 #     def __init__(self, llm):

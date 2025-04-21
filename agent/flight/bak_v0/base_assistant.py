@@ -1,5 +1,5 @@
 from abc import ABC
-from app.agent.state import State
+from agent.state import State
 from app.utils.langgraph_utils import *
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
