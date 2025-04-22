@@ -149,12 +149,6 @@ workflow.add_edge("tools", "agent")
 
 memory = MemorySaver()
 app = workflow.compile(checkpointer=memory, interrupt_before=["user_node"])
-
-# 新增：导出 Mermaid 源文件
-with open("workflow.mmd", "w", encoding="utf-8") as f:
-    # 尝试打印所有方法名，找找有没有类似 mermaid 的导出方法
-    # print(dir(app.get_graph()))
-    f.write(app.get_graph().draw_mermaid())  # 暂时注释掉
 # draw_graph(app, "workflow.png")
 
 def run_interactive():

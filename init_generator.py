@@ -2,6 +2,7 @@ import os
 import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from infrastructure.logger import log
 
 class InitFileGenerator(FileSystemEventHandler):
     def on_created(self, event):

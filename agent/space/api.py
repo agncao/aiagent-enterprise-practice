@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException, APIRouter
+from fastapi import FastAPI, HTTPException, APIRouter, WebSocket
 # 导入 CORSMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -68,7 +68,6 @@ async def invoke_agent(request: InvokeRequest):
 
     except Exception as e:
         log.error(f"Error invoking agent for thread {thread_id}: {e}", exc_info=True) # 使用日志记录器并包含堆栈跟踪
-        # print(f"Error invoking agent for thread {thread_id}: {e}") # 移除简单打印
         raise HTTPException(status_code=500, detail=f"Agent invocation failed: {str(e)}")
 
 @router.get("/get_state/{thread_id}")
@@ -126,10 +125,8 @@ api.include_router(router)
 
 # --- 主程序入口 ---
 if __name__ == "__main__":
-    # 从配置中读取服务器主机和端口
-    server_host = config.get("server.host", "0.0.0.0") # 提供默认值
-    server_port = config.get("server.port", 8000)     # 提供默认值
-
+    server_host = config.get("server.host")
+    server_port = config.get("server.port")
     log.info(f"Starting server on {server_host}:{server_port}") # 添加启动日志
 
     # 使用从配置读取的值启动 uvicorn
@@ -140,3 +137,49 @@ if __name__ == "__main__":
         reload=True, # 开发时可以保留 reload
         log_level=config.get("logging.level", "info").lower() # 从配置读取日志级别
     )
+
+# 新增WebSocket端点
+@api.websocket("/ws/space")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            # 等待前端发送消息
+            data = await websocket.receive_json()
+            user_input = data.get("input")
+            thread_id = data.get("thread_id")
+            if not user_input or not thread_id:
+                await websocket.send_json({"error": "input and thread_id required"})
+                continue
+
+            config_invoke = {"configurable": {"thread_id": thread_id}}
+            inputs = {"messages": [HumanMessage(content=user_input)], "user_input": user_input}
+
+            # 实时流式返回agent执行过程
+            try:
+                # 使用LangGraph的stream方法，逐步推送每个事件
+                for event in app.stream(inputs, config_invoke, stream_mode="values"):
+                    # 只推送agent节点的AI回复和工具节点的结果
+                    if "messages" in event and len(event["messages"]) > 0:
+                        last_message = event["messages"][-1]
+                        if isinstance(last_message, AIMessage):
+                            await websocket.send_json({
+                                "type": "ai_message",
+                                "content": last_message.content,
+                                "thread_id": thread_id
+                            })
+                    # 你也可以根据event内容推送工具调用的结果
+                    if "tool_func" in event:
+                        await websocket.send_json({
+                            "type": "tool_call",
+                            "tool_func": event["tool_func"],
+                            "tool_func_args": event.get("tool_func_args"),
+                            "thread_id": thread_id
+                        })
+                # 结束标志
+                await websocket.send_json({"type": "end", "thread_id": thread_id})
+            except Exception as e:
+                log.error(f"WebSocket agent error: {e}")
+                await websocket.send_json({"error": str(e)})
+    except WebSocketDisconnect:
+        log.info("WebSocket disconnected")

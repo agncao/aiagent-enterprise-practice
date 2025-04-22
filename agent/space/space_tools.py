@@ -8,7 +8,7 @@ from infrastructure.logger import log
 from typing import Optional, List, Dict, Any
 
 @tool(args_schema=ScenarioConfig)
-def create_scenario(name: str, centralBody: str, startTime: str, endTime: str, description: Optional[str] = None) -> ToolResult:
+def create_scenario(name: str, centralBody: str, startTime: str, endTime: str, description: Optional[str] = None) -> dict:
     """
     创建一个新的空间场景。
     
@@ -27,7 +27,7 @@ def create_scenario(name: str, centralBody: str, startTime: str, endTime: str, d
     # result_from_backend = call_yyastk_create_scenario(...)
     success = True 
     message = f"场景 '{name}' 已成功创建。" if success else "场景创建失败。"
-    return ToolResult(success=success, message=message, func="createScene", args=locals())
+    return ToolResult(success=success, message=message, func="createScene", args=locals()).model_dump()
 
 @tool
 def rename_scenerio(new_name: str) -> ToolResult:
@@ -47,7 +47,7 @@ def rename_scenerio(new_name: str) -> ToolResult:
     return ToolResult(success=success, message=message, func="renameScene", args=locals())
 
 @tool(args_schema=EntityConfig)
-def add_point_entity(name: str, entityType:EntityType,position: Optional[Dict[str, Any]] = None, properties: Optional[Dict[str, Any]] = None) -> ToolResult:
+def add_point_entity(name: str, entityType:EntityType,position: Optional[Dict[str, Any]] = None, properties: Optional[Dict[str, Any]] = None) -> dict:
     """
     向当前场景添加一个实体类型为点的对象
 
@@ -65,7 +65,7 @@ def add_point_entity(name: str, entityType:EntityType,position: Optional[Dict[st
     # result_from_backend = call_yyastk_add_entity(...)
     success = True 
     message = f"实体: '{name}', 类型: '{EntityType.PLACE}' 已成功添加。" if success else "实体添加失败。"
-    return ToolResult(success=success, message=message, func="addPointEntity", args=locals())
+    return ToolResult(success=success, message=message, func="addPointEntity", args=locals()).model_dump()
 
 @tool(args_schema=SatelliteTLEParams)
 def add_satellite_entity(
@@ -93,7 +93,7 @@ def add_satellite_entity(
     # 实际应用中可能返回计算出的位置数据
     return ToolResult(success=success, message=message, func="addSatelliteEntity", args=locals())
 @tool
-def clear_entities() -> ToolResult:
+def clear_entities() -> dict:
     """
     清除当前场景中的所有实体。
     
@@ -103,10 +103,10 @@ def clear_entities() -> ToolResult:
     log.info("模拟清除所有实体")
     success = True 
     message = "所有实体已成功清除。" if success else "清除实体失败。"
-    return ToolResult(success=success, message=message, func="clearEntities", args=None)
+    return ToolResult(success=success, message=message, func="clearEntities", args=None).model_dump()
 
 @tool
-def clear_scene() -> ToolResult:
+def clear_scene() -> dict:
     """
     清除当前场景，包括所有实体和设置。
     
@@ -116,25 +116,8 @@ def clear_scene() -> ToolResult:
     log.info("模拟清除场景")
     success = True 
     message = "场景已成功清除。" if success else "清除场景失败。"
-    return ToolResult(success=success, message=message, func="clearScene", args=None)
+    return ToolResult(success=success, message=message, func="clearScene", args=None).model_dump()
 
-@tool
-def confirm_user_action(action_description: str, details: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    在执行创建或修改操作前，调用此工具向用户确认信息。
-
-    Args:
-        action_description (str): 需要确认的操作描述 (例如 "创建以下场景", "添加以下实体")。
-        details (Dict[str, Any]): 需要用户确认的具体信息。
-
-    Returns:
-        Dict[str, Any]: 一个包含确认请求的消息，引导用户确认。
-    """
-    log.info(f"请求用户确认操作: {action_description}, 细节: {details}")
-    details_str = "\n".join([f"- {k}: {v}" for k, v in details.items() if v is not None])
-    prompt = f"请确认是否要{action_description}：\n{details_str}\n请输入 '是' 或 '否'。"
-    # 同样，这个工具生成一个需要AI回复给用户的提示
-    return {"prompt_to_user": prompt}
 
 # 将所有工具收集到一个列表中
-space_tools = [confirm_user_action,create_scenario, rename_scenerio, add_point_entity, add_satellite_entity, clear_entities, clear_scene]
+space_tools = [create_scenario, rename_scenerio, add_point_entity, add_satellite_entity, clear_entities, clear_scene]

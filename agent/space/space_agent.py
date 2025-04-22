@@ -14,7 +14,7 @@ from infrastructure.config import config
 from infrastructure.logger import log
 from agent.space.space_types import SpaceState, ConversationState, ScenarioConfig, EntityConfig, ToolResult
 from agent.space.space_tools import space_tools
-from app.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
+from agent.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
 from pydantic import BaseModel
 
 # 初始化内存检查点
@@ -27,6 +27,25 @@ class UserConfirm(BaseModel):
     是否需要用户确认信息
     """
     request: str
+
+
+# @tool
+# def confirm_user_action(action_description: str, details: Dict[str, Any]) -> Dict[str, Any]:
+#     """
+#     在执行创建或修改操作前，调用此工具向用户确认信息。
+
+#     Args:
+#         action_description (str): 需要确认的操作描述 (例如 "创建以下场景", "添加以下实体")。
+#         details (Dict[str, Any]): 需要用户确认的具体信息。
+
+#     Returns:
+#         Dict[str, Any]: 一个包含确认请求的消息，引导用户确认。
+#     """
+#     log.info(f"请求用户确认操作: {action_description}, 细节: {details}")
+#     details_str = "\n".join([f"- {k}: {v}" for k, v in details.items() if v is not None])
+#     prompt = f"请确认是否要{action_description}：\n{details_str}\n请输入 '是' 或 '否'。"
+#     # 同样，这个工具生成一个需要AI回复给用户的提示
+#     return {"prompt_to_user": prompt}
 
 # --- Agent Node ---
 def create_space_agent_executor():
@@ -65,7 +84,7 @@ def create_space_agent_executor():
         temperature=0, # 对于需要精确遵循指令的任务，温度设低一些
         streaming=True
     )
-    llm_with_tools = llm.bind_tools(tools=space_tools)
+    llm_with_tools = llm.bind_tools(tools=space_tools+[UserConfirm])
     def agent_node(state: SpaceState):
         log.debug("--- Agent Node Start ---\n","Current State: ", state)
         history_messages = state.get('messages', [])
@@ -101,6 +120,7 @@ def create_space_agent_executor():
             new_state_update["user_input"] = ""
             new_state_update["tool_func"] = tool_name
             new_state_update["tool_func_args"] = tool_args
+            # new_state_update["tool_result"] = 
 
         log.debug(f"--- Agent Node End --- Update: {new_state_update}")
         return new_state_update
@@ -113,6 +133,12 @@ def process_tools_output(state: SpaceState):
     log.debug(f"--- Routing After Tools --- State: {state}")
     # 工具执行后，总是返回 Agent 进行下一步处理
     # Agent 会根据工具结果和当前状态决定是回复用户、请求确认、收集更多信息还是结束
+    last_message = state["messages"][-1]
+    if isinstance(last_message, ToolMessage):
+        tool_result_json = json.loads(last_message.content)
+        last_message.content = tool_result_json.get("message","")
+        state["tool_result"] = tool_result_json
+        
     state.pop("action", None)
     state.pop("tool_func", None)
     state.pop("tool_func_args", None)
