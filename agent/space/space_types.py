@@ -4,14 +4,19 @@ from enum import Enum
 from langchain_core.messages import BaseMessage
 from typing_extensions import TypedDict, Annotated
 from langgraph.graph import add_messages
+from datetime import datetime
 
+class CommandType(Enum):
+    QUERY = "query"
+    WRITE = "write"
 
 # 对应 ScenarioConfig
 class ScenarioConfig(BaseModel):
     name: str = None
     centralBody: str = None
-    startTime: str = None
-    endTime: str = None
+    # UTC时间格式，例如: "2024-01-01T00:00:00Z"
+    startTime: datetime = Field(None, description="开始时间(UTC)")
+    endTime: datetime = Field(None, description="结束时间(UTC)")
     description: Optional[str] = None
 
 # 对应 EntityConfig
@@ -53,19 +58,15 @@ class SatelliteTLEParams(BaseModel):
     # 两行轨道数据
     TLEs: List[str]
     
-class ConversationState(Enum):
-    IDLE = 'idle'                     # 空闲状态
-    COLLECTING_INFO = 'collecting_info' # 收集信息状态
-    CONFIRMING = 'confirming'         # 确认信息状态
-    EXECUTING = 'executing'           # 执行操作状态
-    ERROR = 'error'                   # 错误状态
 
 # 对应 ToolResult
 class ToolResult(BaseModel):
-    success: bool
-    message: str
+    success: bool=True
+    message: str=''
     args: Optional[Any] = None
     func: str
+    type: Optional[CommandType] = CommandType.WRITE
+    data: list[Any] = []
 
 # Agent 的状态定义，结合了 ConversationContext 和 BaseState 的概念
 class SpaceState(TypedDict):
@@ -79,7 +80,7 @@ class SpaceState(TypedDict):
     tool_func:str = None 
     # 工具调用所需参数 例如：tool_call['function']['arguments']
     tool_func_args: dict = None
-    # 工具调用返回结果 status 0 代表失败，1 代表成功
-    act_result: dict = {"status":"0","data":[],"message":"success"}
+    # 工具调用返回结果
+    act_result: Optional[ToolResult]    
     # 设置完成标志，表示工具执行已完成
     completed: bool = False

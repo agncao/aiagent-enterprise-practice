@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from langchain_core.tools import tool
 from infrastructure.config import config
 from infrastructure.logger import log
-from agent.space.space_types import SpaceState, ConversationState, ScenarioConfig, EntityConfig, ToolResult
+from agent.space.space_types import SpaceState, ScenarioConfig, EntityConfig, ToolResult
 from agent.space.space_tools import space_tools
 from agent.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
 from pydantic import BaseModel
