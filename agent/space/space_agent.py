@@ -12,10 +12,12 @@ from pydantic import ValidationError
 from langchain_core.tools import tool
 from infrastructure.config import config
 from infrastructure.logger import log
-from agent.space.space_types import SpaceState, ScenarioConfig, EntityConfig, ToolResult
-from agent.space.space_tools import space_tools
 from agent.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
 from pydantic import BaseModel
+from agent.space.space_types import SpaceState, ScenarioConfig, EntityConfig, ToolResult
+from agent.space.agent_tool import UserConfirm, continue_workflow_with_tool_result
+from agent.space.space_read_tool import read_tools
+from agent.space.space_write_tool import write_tools
 
 # 初始化内存检查点
 memory = MemorySaver()
@@ -50,26 +52,34 @@ class UserConfirm(BaseModel):
 # --- Agent Node ---
 def create_space_agent_executor():
     """创建空间场景 Agent 的执行器节点"""
+
+    space_tools = read_tools + write_tools
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """你是一个智能空间态势助手。你的任务是与用户交互，理解他们的意图（例如创建场景、添加卫星/地面站），收集必要的信息，确认信息，然后调用相应的工具来执行操作。
+        ("system", """你是一个智能空间态势助手。你的任务是与用户交互，理解他们的意图（例如查询场景、创建场景、添加卫星/地面站），收集必要的信息，确认信息，然后调用相应的工具来执行操作。
 
         当前时间: {time}
-
         工作流程:
         1.  问候用户，理解他们的请求意图 (intent)。
-        2.  如果意图是创建场景或添加实体：
+        2.  如果意图是查询场景或实体（如包含‘查询’、‘是否存在’等关键词）：
+            a. 解析用户输入，提取查询对象信息。
+            b. 优先调用相关查询工具（如 query_scenario_exists、query_scenario_entities），并将结果反馈给用户。
+        3.  如果意图是创建场景：
+            a. 解析用户输入，提取必要的信息。
+            b. 如果提取到的信息包括场景名称，先查询场景是否已存在。
+            c. 如果场景已经存在，需提示用户更换场景名称。
+        4.  如果意图是添加实体：
             a. 解析用户输入，提取必要的信息。
             b. 检查信息是否完整。如果不完整，则请求用户提供缺失的信息。
             c. 如果信息完整，则请求用户确认。
-        3.  如果用户的回复是确认信息（例如 '是', '确认'），表示收集的信息正确，执行操作。
-        4.  如果用户的回复是否认信息（例如 '否', '取消'），表示用户的意图理解的不正确，请求用户更正。
-        5.  如果意图是执行其他操作（如 `calculate_sgp4`），直接调用相应工具。
-        6.  工具执行完成，无论执行成功与否，都回复给用户。
-
+        5.  如果用户的回复是确认信息（例如 '是', '确认'），表示收集的信息正确，执行操作。
+        6.  如果用户的回复是否认信息（例如 '否', '取消'），表示用户的意图理解的不正确，请求用户更正。
+        7.  工具执行完成，无论执行成功与否，都回复给用户。
+        
         注意:
         - 由于实体是属于场景的一部分，所以添加实体前先添加或者查询某个场景。
-        可用工具: {tool_names}
-        """),
+        - 请根据用户输入的关键词（如“查询”、“是否存在”、“获取”等）优先判断是否为查询类意图，并自动调用相关查询工具。
+        
+        可用工具: {tool_names}\n"""),
         MessagesPlaceholder(variable_name="history_messages"),
         ("human", "{user_input}"),
     ]).partial(
@@ -86,7 +96,7 @@ def create_space_agent_executor():
     )
     llm_with_tools = llm.bind_tools(tools=space_tools+[UserConfirm])
     def agent_node(state: SpaceState):
-        log.debug("--- Agent Node Start ---\n","Current State: ", state)
+        log.debug("===========Agent Node Start============ \nState: ", state)
         history_messages = state.get('messages', [])
         chain = RunnablePassthrough.assign(
             history_messages=lambda x: history_messages,
@@ -95,22 +105,16 @@ def create_space_agent_executor():
         # 调用 LLM
         try:
             response = chain.invoke({"user_input": state["user_input"]})
-            log.debug(f"LLM Raw Response: {response}")
+            log.debug(f"agent_node Response: {response}")
         except Exception as e:
-            log.error(f"LLM 调用失败: {e}")
-            # 可以返回错误状态或默认消息
-            error_message = AIMessage(content="抱歉，处理您的请求时遇到问题。")
-            return {"messages": [error_message], "conversation_state": ConversationState.ERROR}
+            log.error(f"agent_node error: {e}")
+            return {"messages": [AIMessage(content="抱歉，处理您的请求时遇到问题。")]}
 
-        # --- 状态更新逻辑 ---
         new_state_update = {"messages": [response]}
-
-        # 检查 LLM 是否要求调用工具
         tool_calls = response.additional_kwargs.get("tool_calls", [])
 
         if tool_calls:
-            log.info(f"LLM 请求调用工具: {[call['function']['name'] for call in tool_calls]}")
-            # 提取第一个工具调用的信息 (LangGraph 通常按顺序处理)
+            log.info(f"agent_node请求调用工具: {[call['function']['name'] for call in tool_calls]}")
             tool_call = tool_calls[0]
             tool_name = tool_call['function']['name']
             tool_args = json.loads(tool_call['function']['arguments'])
@@ -120,7 +124,6 @@ def create_space_agent_executor():
             new_state_update["user_input"] = ""
             new_state_update["tool_func"] = tool_name
             new_state_update["tool_func_args"] = tool_args
-            # new_state_update["tool_result"] = 
 
         log.debug(f"--- Agent Node End --- Update: {new_state_update}")
         return new_state_update
@@ -129,23 +132,35 @@ def create_space_agent_executor():
 
 # --- Tool Node ---
 def process_tools_output(state: SpaceState):
-    """决定工具执行后的下一个节点"""
+    """
+    处理工具的输出，更新状态
+    """
     log.debug(f"--- Routing After Tools --- State: {state}")
     # 工具执行后，总是返回 Agent 进行下一步处理
     # Agent 会根据工具结果和当前状态决定是回复用户、请求确认、收集更多信息还是结束
-    last_message = state["messages"][-1]
-    if isinstance(last_message, ToolMessage):
-        tool_result_json = json.loads(last_message.content)
-        last_message.content = tool_result_json.get("message","")
-        state["tool_result"] = tool_result_json
-        
+
     state.pop("action", None)
     state.pop("tool_func", None)
     state.pop("tool_func_args", None)
     state["completed"] = True
 
-    return state
+    last_message = state["messages"][-1]
+    if not isinstance(last_message, ToolMessage):
+        return state
 
+    tool_name = getattr(last_message, 'name', None)
+    agent_tools = ["UserConfirm"]
+    if tool_name in agent_tools:
+        pass
+    else:
+        try:
+            tool_result_json = json.loads(last_message.content)
+            last_message.content = tool_result_json.get("message", "")
+            state["tool_result"] = tool_result_json
+        except Exception as e:
+            log.error(f"工具结果解析失败: {e}")
+            raise e
+    return state
 
 # --- Graph Definition ---
 workflow = StateGraph(SpaceState)
@@ -153,8 +168,9 @@ workflow = StateGraph(SpaceState)
 # 添加节点
 agent_executor_node = create_space_agent_executor()
 workflow.add_node("agent", agent_executor_node)
-workflow.add_node("tools", ToolNode(space_tools))
+workflow.add_node("tools", ToolNode(read_tools+write_tools))
 workflow.add_node("process", process_tools_output)
+workflow.add_node("continue_tool", continue_workflow_with_tool_result) 
 
 # 设置入口点
 workflow.set_entry_point("agent")
@@ -162,20 +178,19 @@ workflow.set_entry_point("agent")
 # 定义边的逻辑
 def route_after_agent(state: SpaceState):
     """决定 Agent 执行后的下一个节点"""
-    log.debug(f"--- Routing Decision --- State: {state}")
-    
-    # 如果状态标记为已完成，结束当前轮次
     if state.get("completed", False):
         log.info("Tool execution completed. Ending turn.")
         return END
     
-    # 如果有工具调用请求，路由到工具节点
     if state.get("action") == "tool_call" and state.get("tool_func"):
+        if state["tool_func"].startswith("query_"):
+            log.info(f"工具 {state['tool_func']}执行中断, 等待平台响应....")
+            return "continue_tool"  
+        log.info(f"工具 {state['tool_func']} 执行中...")
         return "tools"
     else:
-        # 如果没有工具调用，对话结束或等待用户下一次输入
         log.info("No tool call requested. Ending turn.")
-        return END # 或者可以路由回 agent 等待下一次用户输入
+        return END 
 
 # 添加边
 workflow.add_conditional_edges(
@@ -183,14 +198,19 @@ workflow.add_conditional_edges(
     route_after_agent,
     {
         "tools": "tools",
+        "continue_tool": "continue_tool",
         END: END
     }
 )
 workflow.add_edge("tools", "process")
 workflow.add_edge("process", "agent")
+# continue_tool 节点恢复后回到 agent
+workflow.add_edge("continue_tool", "agent")
 
 # 编译 Graph
-app = workflow.compile(checkpointer=memory)
+app = workflow.compile(checkpointer=memory, interrupt_before=["continue_tool"])
+
+# draw_graph(app,"space_agent_graph")
 
 # --- 运行交互式对话 (示例) ---
 def run():

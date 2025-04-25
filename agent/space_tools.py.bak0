@@ -6,6 +6,15 @@ from langchain_core.tools import tool
 from agent.space.space_types import ScenarioConfig, EntityConfig, SatelliteTLEParams, ToolResult, EntityType, EntityPosition
 from infrastructure.logger import log
 from typing import Optional, List, Dict, Any
+import json
+from datetime import datetime
+import re
+    
+# 处理datetime对象序列化
+def default_serializer(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 @tool(args_schema=ScenarioConfig)
 def create_scenario(name: str, centralBody: str, startTime: str, endTime: str, description: Optional[str] = None) -> dict:
@@ -22,12 +31,24 @@ def create_scenario(name: str, centralBody: str, startTime: str, endTime: str, d
     Returns:
         ToolResult: 操作结果。
     """
-    log.info(f"模拟创建场景: {name}, {centralBody}, {startTime}, {endTime}, {description}")
-    # 在实际应用中，这里会调用 YYASTK 或其他服务的 API
-    # result_from_backend = call_yyastk_create_scenario(...)
-    success = True 
-    message = f"场景 '{name}' 已成功创建。" if success else "场景创建失败。"
-    return ToolResult(success=success, message=message, func="createScene", args=locals()).model_dump()
+    log.info(f"创建场景工具: {name}, {centralBody}, {startTime}, {endTime}, {description}")
+    result = ToolResult(message=f"场景 '{name}' 已成功创建。",func="createScene",args=json.dumps(args, ensure_ascii=False))
+
+    # 日期格式正则表达式，支持两种格式：
+    # 1. YYYY-MM-DD
+    # 2. YYYY-MM-DDThh:mm:ss.sssZ (Z可选)
+    date_pattern = r'^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z)?)?$'
+    if not re.match(date_pattern, start) or not re.match(date_pattern, end):
+        return result.set_success(False).set_message("请告诉我创建场景的纪元开始时间和结束时间").model_dump()
+    
+    try:
+        args_str = json.dumps(args, default=default_serializer, ensure_ascii=False)
+        result.set_args(args_str)
+    except TypeError as e:
+        log.error(f"Error serializing args: {e}")
+        result.set_success(False)
+
+    return ToolResult(success=success, message=message, func="createScene", args=args_str).model_dump()
 
 @tool
 def rename_scenerio(new_name: str) -> ToolResult:

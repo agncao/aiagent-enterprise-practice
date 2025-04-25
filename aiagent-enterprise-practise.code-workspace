@@ -1,9 +1,7 @@
 {
 	"folders": [
 		{
-			"name": "aiagent-enterprise-practise",
 			"path": "."
 		}
-	],
-	"settings": {}
+	]
 }

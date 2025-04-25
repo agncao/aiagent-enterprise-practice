@@ -139,27 +139,30 @@ if __name__ == "__main__":
     )
 
 # 新增WebSocket端点
+from agent.space.space_agent import app, memory
+
 @api.websocket("/ws/space")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # 等待前端发送消息
             data = await websocket.receive_json()
-            user_input = data.get("input")
-            thread_id = data.get("thread_id")
-            if not user_input or not thread_id:
-                await websocket.send_json({"error": "input and thread_id required"})
-                continue
-
-            config_invoke = {"configurable": {"thread_id": thread_id}}
-            inputs = {"messages": [HumanMessage(content=user_input)], "user_input": user_input}
-
-            # 实时流式返回agent执行过程
-            try:
-                # 使用LangGraph的stream方法，逐步推送每个事件
-                for event in app.stream(inputs, config_invoke, stream_mode="values"):
-                    # 只推送agent节点的AI回复和工具节点的结果
+            msg_type = data.get("type")
+            if msg_type == "tool_result":
+                tool_func = data["tool_func"]
+                result = data["result"]
+                thread_id = data["thread_id"]
+                # 恢复流程
+                config_invoke = {"configurable": {"thread_id": thread_id}}
+                # 从memory获取当前状态
+                state = memory.get_state(thread_id)
+                if not state:
+                    await websocket.send_json({"error": "state not found"})
+                    continue
+                # 注入tool_result
+                state["tool_result"] = result
+                # 继续从continue_tool节点
+                for event in app.stream(state, config_invoke, stream_mode="values", node="continue_tool"):
                     if "messages" in event and len(event["messages"]) > 0:
                         last_message = event["messages"][-1]
                         if isinstance(last_message, AIMessage):
@@ -168,7 +171,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "content": last_message.content,
                                 "thread_id": thread_id
                             })
-                    # 你也可以根据event内容推送工具调用的结果
                     if "tool_func" in event:
                         await websocket.send_json({
                             "type": "tool_call",
@@ -176,7 +178,35 @@ async def websocket_endpoint(websocket: WebSocket):
                             "tool_func_args": event.get("tool_func_args"),
                             "thread_id": thread_id
                         })
-                # 结束标志
+                await websocket.send_json({"type": "end", "thread_id": thread_id})
+                continue
+
+            user_input = data.get("content")
+            thread_id = data.get("thread_id")
+            if not user_input or not thread_id:
+                await websocket.send_json({"error": "input and thread_id required"})
+                continue
+
+            config_invoke = {"configurable": {"thread_id": thread_id}}
+            inputs = {"messages": [HumanMessage(content=user_input)], "user_input": user_input}
+
+            try:
+                for event in app.stream(inputs, config_invoke, stream_mode="values"):
+                    if "messages" in event and len(event["messages"]) > 0:
+                        last_message = event["messages"][-1]
+                        if isinstance(last_message, AIMessage):
+                            await websocket.send_json({
+                                "type": "ai_message",
+                                "content": last_message.content,
+                                "thread_id": thread_id
+                            })
+                    if "action" in event and event["action"] == "tool_call":
+                        await websocket.send_json({
+                            "type": "tool_call",
+                            "tool_func": event["tool_func"],
+                            "tool_func_args": event.get("tool_func_args"),
+                            "thread_id": thread_id
+                        })
                 await websocket.send_json({"type": "end", "thread_id": thread_id})
             except Exception as e:
                 log.error(f"WebSocket agent error: {e}")

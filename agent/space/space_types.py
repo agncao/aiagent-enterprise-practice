@@ -7,7 +7,7 @@ from langgraph.graph import add_messages
 from datetime import datetime
 
 class CommandType(Enum):
-    QUERY = "query"
+    READ = "query"
     WRITE = "write"
 
 # 对应 ScenarioConfig
