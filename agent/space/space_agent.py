@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.types import Checkpointer
 from pydantic import ValidationError
 from langchain_core.tools import tool
 from infrastructure.config import config
@@ -15,7 +16,7 @@ from infrastructure.logger import log
 from agent.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
 from pydantic import BaseModel
 from agent.space.space_types import SpaceState, ScenarioConfig, EntityConfig, ToolResult
-from agent.space.agent_tool import UserConfirm, continue_workflow_with_tool_result
+from agent.space.agent_tool import UserConfirm
 from agent.space.space_read_tool import read_tools
 from agent.space.space_write_tool import write_tools
 
@@ -130,34 +131,20 @@ def create_space_agent_executor():
 # --- Tool Node ---
 def process_tools_output(state: SpaceState):
     """
-    处理工具的输出，更新状态
+    处理工具的输出，更新状态。
+    优先使用 state 中已有的 'tool_result' (来自外部注入)，
+    否则尝试处理最后一个 ToolMessage。
     """
-    log.debug(f"--- Routing After Tools --- State: {state}")
-    # 工具执行后，总是返回 Agent 进行下一步处理
-    # Agent 会根据工具结果和当前状态决定是回复用户、请求确认、收集更多信息还是结束
-
-    state.pop("action", None)
-    state.pop("tool_func", None)
-    state.pop("tool_func_args", None)
-    state["completed"] = True
-
+    log.debug(f"--- Process Tools Output Start --- State: {state}")
+    
+    tool_result_external = state.get("tool_result")
     last_message = state["messages"][-1]
-    if not isinstance(last_message, ToolMessage):
-        return state
 
-    tool_name = getattr(last_message, 'name', None)
-    agent_tools = ["UserConfirm"]
-    if tool_name in agent_tools:
-        pass
-    else:
-        try:
-            tool_result_json = json.loads(last_message.content)
-            last_message.content = tool_result_json.get("message", "")
-            state["tool_result"] = tool_result_json
-        except Exception as e:
-            log.error(f"工具结果解析失败: {e}")
-            raise e
-    return state
+    if tool_result_external:
+        log.info(f"使用外部注入的 tool_result: {tool_result_external}. 标记直接结束。")
+        tool_result = ToolResult.model_validate(tool_result_external)
+        return {"messages": [AIMessage(content=tool_result.message)],"completed": True}
+    return {"messages": [last_message]}
 
 # --- Graph Definition ---
 workflow = StateGraph(SpaceState)
@@ -167,7 +154,6 @@ agent_executor_node = create_space_agent_executor()
 workflow.add_node("agent", agent_executor_node)
 workflow.add_node("tools", ToolNode(read_tools+write_tools))
 workflow.add_node("process", process_tools_output)
-workflow.add_node("continue_tool", continue_workflow_with_tool_result) 
 
 # 设置入口点
 workflow.set_entry_point("agent")
@@ -175,16 +161,12 @@ workflow.set_entry_point("agent")
 # 定义边的逻辑
 def route_after_agent(state: SpaceState):
     """决定 Agent 执行后的下一个节点"""
-    if state.get("completed", False):
-        log.info("Tool execution completed. Ending turn.")
+    if state.get("completed") or len(state["messages"]) == 0:
         return END
-    
-    if state.get("action") == "tool_call" and state.get("tool_func"):
-        if state["tool_func"].startswith("query_"):
-            log.info(f"工具 {state['tool_func']}执行中断, 等待平台响应....")
-            return "continue_tool"  
-        log.info(f"工具 {state['tool_func']} 执行中...")
-        return "tools"
+    last_message = state["messages"][-1]
+    if isinstance(last_message, AIMessage) and state.get("action") == "tool_call" and state.get("tool_func"):
+        log.info(f"工具 {state['tool_func']}执行中断, 等待平台响应....")
+        return "tools"  
     else:
         log.info("No tool call requested. Ending turn.")
         return END 
@@ -195,17 +177,14 @@ workflow.add_conditional_edges(
     route_after_agent,
     {
         "tools": "tools",
-        "continue_tool": "continue_tool",
         END: END
     }
 )
 workflow.add_edge("tools", "process")
-workflow.add_edge("process", "agent")
-# continue_tool 节点恢复后回到 agent
-workflow.add_edge("continue_tool", "agent")
+workflow.add_edge("process","agent")
 
 # 编译 Graph
-app = workflow.compile(checkpointer=memory, interrupt_before=["continue_tool"])
+app = workflow.compile(checkpointer=memory, interrupt_before=["process"])
 
 # draw_graph(app,"space_agent_graph")
 

@@ -19,7 +19,7 @@ def query_scenario(name: str) -> dict:
         name (str): 场景名称。
     '''
     log.info(f"execute tool: query_scenario, input: {name}")
-    result = ToolResult(type=CommandType.READ,func="query_scene", args=locals())
+    result = ToolResult(type=CommandType.READ,message=f"向平台发送查询场景指令",func="query_scene", args=locals()).model_dump()
     return result
 
 @tool
@@ -31,7 +31,7 @@ def query_scenario_entities(name: str) -> dict:
         name (str): 场景名称。
     '''
     log.info(f"execute tool: query_scenario_entities, input: {name}")
-    result = ToolResult(type=CommandType.READ,func="query_scene_entities", args=locals())
+    result = ToolResult(type=CommandType.READ,message=f"向平台发送查询场景实体指令",func="query_scene_entities", args=locals()).model_dump()
     return result
 
 read_tools = [query_scenario, query_scenario_entities]

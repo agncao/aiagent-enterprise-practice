@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Dict, Any
 
 from agent.space.space_agent import app, memory
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 # 导入配置模块
 from infrastructure.config import config
 from infrastructure.logger import log # 导入日志记录器
@@ -144,72 +144,68 @@ from agent.space.space_agent import app, memory
 @api.websocket("/ws/space")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_json()
-            msg_type = data.get("type")
-            if msg_type == "tool_result":
-                tool_func = data["tool_func"]
-                result = data["result"]
-                thread_id = data["thread_id"]
-                # 恢复流程
-                config_invoke = {"configurable": {"thread_id": thread_id}}
-                # 从memory获取当前状态
-                state = memory.get_state(thread_id)
-                if not state:
-                    await websocket.send_json({"error": "state not found"})
-                    continue
-                # 注入tool_result
-                state["tool_result"] = result
-                # 继续从continue_tool节点
-                for event in app.stream(state, config_invoke, stream_mode="values", node="continue_tool"):
-                    if "messages" in event and len(event["messages"]) > 0:
-                        last_message = event["messages"][-1]
-                        if isinstance(last_message, AIMessage):
-                            await websocket.send_json({
-                                "type": "ai_message",
-                                "content": last_message.content,
-                                "thread_id": thread_id
-                            })
-                    if "tool_func" in event:
-                        await websocket.send_json({
-                            "type": "tool_call",
-                            "tool_func": event["tool_func"],
-                            "tool_func_args": event.get("tool_func_args"),
-                            "thread_id": thread_id
-                        })
-                await websocket.send_json({"type": "end", "thread_id": thread_id})
-                continue
-
-            user_input = data.get("content")
-            thread_id = data.get("thread_id")
-            if not user_input or not thread_id:
-                await websocket.send_json({"error": "input and thread_id required"})
-                continue
-
+    while True:
+        data = await websocket.receive_json()
+        msg_type = data.get("type")
+        if msg_type == "tool_result":
+            log.info(f"Received tool result: {data}")
+            result = data["result"]
+            thread_id = data["thread_id"]
+            # 配置 LangGraph 调用
             config_invoke = {"configurable": {"thread_id": thread_id}}
-            inputs = {"messages": [HumanMessage(content=user_input)], "user_input": user_input}
-
+            app.update_state(config_invoke, {"tool_result": result})
             try:
-                for event in app.stream(inputs, config_invoke, stream_mode="values"):
-                    if "messages" in event and len(event["messages"]) > 0:
-                        last_message = event["messages"][-1]
-                        if isinstance(last_message, AIMessage):
-                            await websocket.send_json({
-                                "type": "ai_message",
-                                "content": last_message.content,
-                                "thread_id": thread_id
-                            })
-                    if "action" in event and event["action"] == "tool_call":
+                async for event in app.astream(None, config_invoke, stream_mode="values"):
+                    last_message = event["messages"][-1]
+                    if isinstance(last_message, AIMessage) and last_message.content:
+                        await websocket.send_json({
+                            "type": "ai_message",
+                            "content": last_message.content,
+                            "thread_id": thread_id
+                        })
+                    elif isinstance(last_message, ToolMessage) and "action" in event and event["action"] == "tool_call":
                         await websocket.send_json({
                             "type": "tool_call",
-                            "tool_func": event["tool_func"],
+                            "tool_func": event.get("tool_func"),
                             "tool_func_args": event.get("tool_func_args"),
                             "thread_id": thread_id
                         })
+
+                log.info(f"Workflow resumed and finished for thread_id: {thread_id}")
                 await websocket.send_json({"type": "end", "thread_id": thread_id})
+                continue # Go back to waiting for next message
             except Exception as e:
-                log.error(f"WebSocket agent error: {e}")
-                await websocket.send_json({"error": str(e)})
-    except WebSocketDisconnect:
-        log.info("WebSocket disconnected")
+                log.error(f"Error resuming workflow for thread {thread_id}: {e}", exc_info=True)
+                await websocket.send_json({"type": "error", "message": f"Workflow failed during resumption: {str(e)}", "thread_id": thread_id})
+                continue
+
+        user_input = data.get("content")
+        thread_id = data.get("thread_id")
+        if not user_input or not thread_id:
+            await websocket.send_json({"error": "input and thread_id required"})
+            continue
+
+        config_invoke = {"configurable": {"thread_id": thread_id}}
+        inputs = {"messages": [HumanMessage(content=user_input)], "user_input": user_input}
+
+        try:
+            for event in app.stream(inputs, config_invoke, stream_mode="values"):
+                if "messages" in event and len(event["messages"]) > 0:
+                    last_message = event["messages"][-1]
+                    if isinstance(last_message, AIMessage):
+                        await websocket.send_json({
+                            "type": "ai_message",
+                            "content": last_message.content,
+                            "thread_id": thread_id
+                        })
+                if "action" in event and event["action"] == "tool_call":
+                    await websocket.send_json({
+                        "type": "tool_call",
+                        "tool_func": event["tool_func"],
+                        "tool_func_args": event.get("tool_func_args"),
+                        "thread_id": thread_id
+                    })
+            await websocket.send_json({"type": "end", "thread_id": thread_id})
+        except Exception as e:
+            log.error(f"WebSocket agent error: {e}")
+            await websocket.send_json({"error": str(e)})

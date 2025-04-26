@@ -12,20 +12,23 @@ class CommandType(Enum):
 
 # 对应 ScenarioConfig
 class ScenarioConfig(BaseModel):
-    name: str = None
-    centralBody: str = None
-    # UTC时间格式，例如: "2024-01-01T00:00:00Z"
+    name: str = Field(None, description="场景名称")
+    centralBody: str = Field("Earth", description="中心天体")
     startTime: datetime = Field(None, description="开始时间(UTC)")
     endTime: datetime = Field(None, description="结束时间(UTC)")
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, description="场景描述")
 
 # 对应 EntityConfig
 class EntityPosition(BaseModel):
-    longitude: float
-    latitude: float
-    height: Optional[float] = None
+    longitude: float = Field(None, description="经度")
+    latitude: float = Field(None, description="纬度")
+    height: Optional[float] = Field(None, description="高度")
 
 class EntityType(Enum):
+    """
+    实体类型
+    表示在空物体的类型，例如：地面站、卫星、飞机、传感器、地面车等
+    """
     GROUND_STATION = "ground_station"
     PLACE = "place"                   # 地点
     TARGET = "target"                 # 目标点
@@ -42,30 +45,30 @@ class EntityType(Enum):
     CHAIN = "chain"                   # 链路
 
 class EntityConfig(BaseModel):
-    entityType: Optional[EntityType] = None
-    name: Optional[str] = None
-    position: Optional[EntityPosition] = None
-    properties: Optional[Dict[str, Any]] = None
+    entityType: EntityType = Field(None, description="实体类型")
+    name: Optional[str] = Field(None, description="实体名称")
+    position: EntityPosition = Field(None, description="实体位置")
+    properties: Optional[Dict[str, Any]] = Field(None, description="实体属性")
 
 # 对应 SatelliteTLEParams
 class SatelliteTLEParams(BaseModel):
     # 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"
-    Start: str
+    start: Optional[datetime] = Field(None, description="开始时间(UTC)")
     # 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"
-    Stop: str
+    end: Optional[datetime] = Field(None, description="结束时间(UTC)")
     # 卫星编号，例如："SL-44291"
-    SatelliteNumber: str
+    satellite_number: Optional[str] = Field(None, description="卫星编号")
     # 两行轨道数据
-    TLEs: List[str]
-    
+    TLEs: List[str] = Field(None, description="轨道数据")
+
 
 # 对应 ToolResult
 class ToolResult(BaseModel):
-    success: bool=True
-    message: str=''
+    success: bool = Field(True, description="是否成功")
+    message: str = Field('', description="消息")
     args: Optional[Any] = None
-    func: str
-    type: Optional[CommandType] = CommandType.WRITE
+    func: str = Field('', description="函数名")
+    type: Optional[CommandType] = Field(CommandType.WRITE, description="命令类型")
     data: list[Any] = []
 
 # Agent 的状态定义，结合了 ConversationContext 和 BaseState 的概念
@@ -81,6 +84,9 @@ class SpaceState(TypedDict):
     # 工具调用所需参数 例如：tool_call['function']['arguments']
     tool_func_args: dict = None
     # 工具调用返回结果
-    act_result: Optional[ToolResult]    
+    tool_result: Optional[ToolResult]    
     # 设置完成标志，表示工具执行已完成
     completed: bool = False
+
+    def __str__(self):
+        return str(self.__dict__)
