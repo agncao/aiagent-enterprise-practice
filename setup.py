@@ -59,6 +59,8 @@ setup(
         "zstandard==0.23.0",
         "pydantic-settings>=2.8.1",
         "python-dotenv>=1.0.0",
+        "langgraph-checkpoint-sqlite>=2.0.6",
+        "aiosqlite>=0.21.0",
     ],
     extras_require={
         "dev": [

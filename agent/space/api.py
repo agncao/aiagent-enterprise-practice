@@ -1,17 +1,16 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException, APIRouter, WebSocket
-# 导入 CORSMiddleware
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware  # 导入 CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any
-
-from agent.space.space_agent import app, memory
+from starlette.websockets import WebSocketDisconnect
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-# 导入配置模块
-from infrastructure.config import config
-from infrastructure.logger import log # 导入日志记录器
 
-# 定义 API 请求体模型
+from infrastructure.config import config
+from infrastructure.logger import log
+from agent.space.space_agent import app
+from agent.space.utils.websocket_helper import WebSocketMessageHandler
+
 class InvokeRequest(BaseModel):
     input: str
     thread_id: str
@@ -121,7 +120,29 @@ api.add_middleware(
 
 # --- 将 Router 包含到主应用中 ---
 api.include_router(router)
-
+@api.websocket("/ws/space")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    handler = WebSocketMessageHandler(websocket, app)
+    while True:
+        try:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+            
+            if msg_type == "tool_result":
+                await handler.handle_tool_result(data)
+            elif msg_type == "user_input":
+                await handler.process_event_stream(user_input=data["content"], thread_id=data["thread_id"])
+            else:
+                log.warn(f"未知消息类型: {msg_type}")
+                await handler.send_message("error", f"未知消息类型: {msg_type}", data.get("thread_id", "unknown"))
+                
+        except WebSocketDisconnect:
+            log.info("WebSocket 客户端断开连接")
+            break
+        except Exception as e:
+            log.error(f"WebSocket 处理错误: {e}")
+            await websocket.send_json({"type": "error", "message": str(e)})
 
 # --- 主程序入口 ---
 if __name__ == "__main__":
@@ -137,75 +158,3 @@ if __name__ == "__main__":
         reload=True, # 开发时可以保留 reload
         log_level=config.get("logging.level", "info").lower() # 从配置读取日志级别
     )
-
-# 新增WebSocket端点
-from agent.space.space_agent import app, memory
-
-@api.websocket("/ws/space")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        data = await websocket.receive_json()
-        msg_type = data.get("type")
-        if msg_type == "tool_result":
-            log.info(f"Received tool result: {data}")
-            result = data["result"]
-            thread_id = data["thread_id"]
-            # 配置 LangGraph 调用
-            config_invoke = {"configurable": {"thread_id": thread_id}}
-            app.update_state(config_invoke, {"tool_result": result})
-            try:
-                async for event in app.astream(None, config_invoke, stream_mode="values"):
-                    last_message = event["messages"][-1]
-                    if isinstance(last_message, AIMessage) and last_message.content:
-                        await websocket.send_json({
-                            "type": "ai_message",
-                            "content": last_message.content,
-                            "thread_id": thread_id
-                        })
-                    elif isinstance(last_message, ToolMessage) and "action" in event and event["action"] == "tool_call":
-                        await websocket.send_json({
-                            "type": "tool_call",
-                            "tool_func": event.get("tool_func"),
-                            "tool_func_args": event.get("tool_func_args"),
-                            "thread_id": thread_id
-                        })
-
-                log.info(f"Workflow resumed and finished for thread_id: {thread_id}")
-                await websocket.send_json({"type": "end", "thread_id": thread_id})
-                continue # Go back to waiting for next message
-            except Exception as e:
-                log.error(f"Error resuming workflow for thread {thread_id}: {e}", exc_info=True)
-                await websocket.send_json({"type": "error", "message": f"Workflow failed during resumption: {str(e)}", "thread_id": thread_id})
-                continue
-
-        user_input = data.get("content")
-        thread_id = data.get("thread_id")
-        if not user_input or not thread_id:
-            await websocket.send_json({"error": "input and thread_id required"})
-            continue
-
-        config_invoke = {"configurable": {"thread_id": thread_id}}
-        inputs = {"messages": [HumanMessage(content=user_input)], "user_input": user_input}
-
-        try:
-            for event in app.stream(inputs, config_invoke, stream_mode="values"):
-                if "messages" in event and len(event["messages"]) > 0:
-                    last_message = event["messages"][-1]
-                    if isinstance(last_message, AIMessage):
-                        await websocket.send_json({
-                            "type": "ai_message",
-                            "content": last_message.content,
-                            "thread_id": thread_id
-                        })
-                if "action" in event and event["action"] == "tool_call":
-                    await websocket.send_json({
-                        "type": "tool_call",
-                        "tool_func": event["tool_func"],
-                        "tool_func_args": event.get("tool_func_args"),
-                        "thread_id": thread_id
-                    })
-            await websocket.send_json({"type": "end", "thread_id": thread_id})
-        except Exception as e:
-            log.error(f"WebSocket agent error: {e}")
-            await websocket.send_json({"error": str(e)})

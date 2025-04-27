@@ -3,5 +3,9 @@
 		{
 			"path": "."
 		}
-	]
+	],
+	"settings": {
+		"python.pythonPath": "/Users/caojm/miniconda3/envs/py3.11/bin/python",
+		"python.defaultInterpreterPath": "/Users/caojm/miniconda3/envs/py3.11/bin/python3"
+	}
 }

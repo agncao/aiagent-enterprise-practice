@@ -59,10 +59,10 @@ def add_point_entity(name: Optional[str] = None,
     向当前场景添加一个实体类型为点的对象
 
     Args:
-        name (Optional[str]): 实体名称。
+        name (Optional[str]): 实体名称(可选)。
         entityType (EntityType): 实体类型。
         position (EntityPosition): 位置信息 (例如 {"longitude": 116.0, "latitude": 40.0})。
-        properties (Optional[Dict[str, Any]]): 其他属性 (例如 TLE)。
+        properties (Optional[Dict[str, Any]]): 其他属性(可选)。
 
     Returns:
         ToolResult: 操作结果。
@@ -75,12 +75,13 @@ def add_satellite_entity(TLEs: List[str], SatelliteNumber: Optional[str] = None,
     向当前场景添加一个实体类型为卫星的对象
     使用SGP4来计算卫星轨道
 
+    特别注意：入参TLEs必须严格遵守TLE格式
+
     Args:
-        TLEs List[str]: 两行轨道数据, 例如：
-            ["1 25730U 99025A   21120.62396556  .00000659  00000-0  35583-3 0  9997","2 25730  99.0559 142.6068 0014039 175.9692 333.4962 14.16181681132327"]
-        SatelliteNumber (str): 卫星编号，例如："SL-44291"
-        start (datetime): 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"
-        end (datetime): 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"
+        TLEs List[str]: 严格遵守TLE格式的两行轨道数据。
+        SatelliteNumber (str): 卫星编号，例如："SL-44291"(可选)。
+        start (datetime): 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"(可选)。
+        end (datetime): 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"(可选)。
 
     Returns:
         ToolResult: 操作结果。

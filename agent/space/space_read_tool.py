@@ -23,15 +23,12 @@ def query_scenario(name: str) -> dict:
     return result
 
 @tool
-def query_scenario_entities(name: str) -> dict:
+def query_scenario_entities() -> dict:
     '''
-    根据场景名称查询场景所包含的所有实体。
-    
-    Args:
-        name (str): 场景名称。
+    查询当前场景所包含的所有实体。
     '''
-    log.info(f"execute tool: query_scenario_entities, input: {name}")
-    result = ToolResult(type=CommandType.READ,message=f"向平台发送查询场景实体指令",func="query_scene_entities", args=locals()).model_dump()
+    log.info(f"execute tool: query_scenario_entities")
+    result = ToolResult(type=CommandType.READ,message=f"向平台发送查询场景实体指令",func="query_scene_entities").model_dump()
     return result
 
 read_tools = [query_scenario, query_scenario_entities]

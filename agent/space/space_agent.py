@@ -16,7 +16,7 @@ from infrastructure.logger import log
 from agent.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
 from pydantic import BaseModel
 from agent.space.space_types import SpaceState, ScenarioConfig, EntityConfig, ToolResult
-from agent.space.agent_tool import UserConfirm
+from agent.space.agent_tool import confirm_user_action
 from agent.space.space_read_tool import read_tools
 from agent.space.space_write_tool import write_tools
 
@@ -67,7 +67,7 @@ def create_space_agent_executor():
         3.  如果意图是创建场景或添加实体：
             a. 解析用户输入，提取必要的信息。
             b. 检查信息是否完整。如果不完整，则请求用户提供缺失的信息。
-            c. 如果信息完整，则请求用户确认。
+            c. 如果信息完整，则请求用户确认，再调用工具。
             d. 天体中心需要解析成英文，比如："地球" -> "Earth"; "月球" -> "Moon"; "火星" -> "Mars" 等。
         4.  如果用户的回复是确认信息（例如 '是', '确认'），表示收集的信息正确，执行操作。
         5.  如果用户的回复是否认信息（例如 '否', '取消'），表示用户的意图理解的不正确，请求用户更正。
@@ -75,7 +75,7 @@ def create_space_agent_executor():
         
         注意:
         - 由于实体是属于场景的一部分，所以添加实体前先添加或者查询某个场景。
-        - 请根据用户输入的关键词（如“查询”、“是否存在”、“获取”等）优先判断是否为查询类意图，并自动调用相关查询工具。
+        - 收集完工具所需参数后必须先请求用户确认，再进行工具的调用
         
         可用工具: {tool_names}\n"""),
         MessagesPlaceholder(variable_name="history_messages"),
@@ -89,10 +89,10 @@ def create_space_agent_executor():
         base_url=config.get("llm.base_url"),
         api_key=config.get("llm.api_key"),
         model_name=config.get("llm.model_name"),
-        temperature=0, # 对于需要精确遵循指令的任务，温度设低一些
+        temperature=0.1, # 对于需要精确遵循指令的任务，温度设低一些
         streaming=True
     )
-    llm_with_tools = llm.bind_tools(tools=space_tools+[UserConfirm])
+    llm_with_tools = llm.bind_tools(tools=space_tools+[confirm_user_action])
     def agent_node(state: SpaceState):
         log.debug("===========Agent Node Start============ \nState: ", state)
         history_messages = state.get('messages', [])
@@ -138,13 +138,17 @@ def process_tools_output(state: SpaceState):
     log.debug(f"--- Process Tools Output Start --- State: {state}")
     
     tool_result_external = state.get("tool_result")
-    last_message = state["messages"][-1]
+    state.pop("tool_result", None)
+    state.pop("tool_func", None)
+    state.pop("tool_func_args", None)
+    state.pop("action", None)
+    last_message = state["messages"][-1] if state.get("messages") else None
 
     if tool_result_external:
         log.info(f"使用外部注入的 tool_result: {tool_result_external}. 标记直接结束。")
         tool_result = ToolResult.model_validate(tool_result_external)
         return {"messages": [AIMessage(content=tool_result.message)],"completed": True}
-    return {"messages": [last_message]}
+    return {"messages": [last_message] if last_message else []}
 
 # --- Graph Definition ---
 workflow = StateGraph(SpaceState)
@@ -166,10 +170,10 @@ def route_after_agent(state: SpaceState):
     last_message = state["messages"][-1]
     if isinstance(last_message, AIMessage) and state.get("action") == "tool_call" and state.get("tool_func"):
         log.info(f"工具 {state['tool_func']}执行中断, 等待平台响应....")
-        return "tools"  
+        return "tools"
     else:
         log.info("No tool call requested. Ending turn.")
-        return END 
+        return END
 
 # 添加边
 workflow.add_conditional_edges(
