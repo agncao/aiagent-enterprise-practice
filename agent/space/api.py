@@ -2,10 +2,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, APIRouter, WebSocket
 from fastapi.middleware.cors import CORSMiddleware  # 导入 CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any
 from starlette.websockets import WebSocketDisconnect
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage
 
+from agent.space.space_types import CommandResponse
 from infrastructure.config import config
 from infrastructure.logger import log
 from agent.space.space_agent import app
@@ -130,7 +130,9 @@ async def websocket_endpoint(websocket: WebSocket):
             msg_type = data.get("type")
             
             if msg_type == "tool_result":
-                await handler.handle_tool_result(data)
+                #将data转成CommandResponse
+                command_response = CommandResponse(**data)
+                await handler.handle_tool_result(command_response)
             elif msg_type == "user_input":
                 await handler.process_event_stream(user_input=data["content"], thread_id=data["thread_id"])
             else:

@@ -7,48 +7,17 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMe
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.types import Checkpointer
-from pydantic import ValidationError
-from langchain_core.tools import tool
+from langgraph.prebuilt import ToolNode
 from infrastructure.config import config
 from infrastructure.logger import log
-from agent.utils.langgraph_utils import loop_graph_invoke_tools,loop_graph_invoke,draw_graph
-from pydantic import BaseModel
-from agent.space.space_types import SpaceState, ScenarioConfig, EntityConfig, ToolResult
+from agent.space.space_types import SpaceState, CommandInfo, ToolInfo
 from agent.space.agent_tool import confirm_user_action
-from agent.space.space_read_tool import read_tools
+from agent.space.space_read_tool import query_scenario, read_tools
 from agent.space.space_write_tool import write_tools
+from agent.space.utils.langgraph_utils import get_tool_info
 
 # 初始化内存检查点
 memory = MemorySaver()
-
-
-@tool
-class UserConfirm(BaseModel):
-    """
-    是否需要用户确认信息
-    """
-    request: str
-
-
-# @tool
-# def confirm_user_action(action_description: str, details: Dict[str, Any]) -> Dict[str, Any]:
-#     """
-#     在执行创建或修改操作前，调用此工具向用户确认信息。
-
-#     Args:
-#         action_description (str): 需要确认的操作描述 (例如 "创建以下场景", "添加以下实体")。
-#         details (Dict[str, Any]): 需要用户确认的具体信息。
-
-#     Returns:
-#         Dict[str, Any]: 一个包含确认请求的消息，引导用户确认。
-#     """
-#     log.info(f"请求用户确认操作: {action_description}, 细节: {details}")
-#     details_str = "\n".join([f"- {k}: {v}" for k, v in details.items() if v is not None])
-#     prompt = f"请确认是否要{action_description}：\n{details_str}\n请输入 '是' 或 '否'。"
-#     # 同样，这个工具生成一个需要AI回复给用户的提示
-#     return {"prompt_to_user": prompt}
 
 # --- Agent Node ---
 def create_space_agent_executor():
@@ -56,27 +25,45 @@ def create_space_agent_executor():
 
     space_tools = read_tools + write_tools
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """你是一个智能空间态势助手。你的任务是与用户交互，理解他们的意图（例如查询场景、创建场景、添加卫星/地面站），收集必要的信息，确认信息，然后调用相应的工具来执行操作。
+        ("system", """你是一个专业的空间场景助手，帮助用户创建和管理空间场景、添加实体（如卫星、地面站等）。
 
         当前时间: {time}
         工作流程:
         1.  问候用户，理解他们的请求意图 (intent)。
-        2.  如果意图是查询场景或实体（如包含‘查询’、‘是否存在’等关键词）：
-            a. 解析用户输入，提取查询对象信息。
-            b. 优先调用相关查询工具（如 query_scenario_exists、query_scenario_entities），并将结果反馈给用户。
-        3.  如果意图是创建场景或添加实体：
+        2.  如果意图是创建场景或添加实体（包括卫星、地面站等）：
             a. 解析用户输入，提取必要的信息。
             b. 检查信息是否完整。如果不完整，则请求用户提供缺失的信息。
-            c. 如果信息完整，则请求用户确认，再调用工具。
+            c. 如果信息完整，则必须使用confirm_user_action工具请求用户确认，再调用其他工具。
             d. 天体中心需要解析成英文，比如："地球" -> "Earth"; "月球" -> "Moon"; "火星" -> "Mars" 等。
+        3.  如果意图是添加实体（包括卫星、地面站等）还需要特别注意：
+            a. 确定在此之前，助手已经成功创建了场景。
+            b. 如果还没创建场景，则请求用户先创建或者查询所需要的场景
         4.  如果用户的回复是确认信息（例如 '是', '确认'），表示收集的信息正确，执行操作。
-        5.  如果用户的回复是否认信息（例如 '否', '取消'），表示用户的意图理解的不正确，请求用户更正。
-        6.  工具执行完成，无论执行成功与否，都回复给用户。
-        
-        注意:
-        - 由于实体是属于场景的一部分，所以添加实体前先添加或者查询某个场景。
-        - 收集完工具所需参数后必须先请求用户确认，再进行工具的调用
-        
+        5.  如果用户的回复是否认信息（例如 '否', '取消'），表示用户的意图理解的不正确，请求用户更正。    
+    
+        重要提示:
+        - 添加任何实体前，都必须确保场景存在。
+        - 收集完工具所需参数后必须先使用confirm_user_action工具请求用户确认，再进行其他工具的调用
+        - 永远不要跳过用户确认步骤，这是强制性的要求
+
+        示例对话:
+        用户: "我想创建一个名为'太空任务'的场景，中心天体是地球，时间从2025-01-01到2025-01-02"
+        助手: [使用confirm_user_action工具] "请确认是否要创建以下场景：
+        - name: 太空任务
+        - centralBody: Earth
+        - startTime: 2025-01-01T00:00:00.000Z
+        - endTime: 2025-01-02T00:00:00.000Z
+        请输入 '是' 或 '否'。"
+        用户: "是"
+        助手: [使用create_scenario工具] "场景'太空任务'已成功创建！"
+
+        用户: "添加一颗卫星，TLE是[...]"
+        助手: [使用confirm_user_action工具] "请确认是否要添加以下卫星：
+        - TLEs: [...]
+        请输入 '是' 或 '否'。"
+        用户: "是"
+        助手: [使用add_satellite_entity工具] "卫星已成功添加到场景中。"
+
         可用工具: {tool_names}\n"""),
         MessagesPlaceholder(variable_name="history_messages"),
         ("human", "{user_input}"),
@@ -108,21 +95,10 @@ def create_space_agent_executor():
             log.error(f"agent_node error: {e}")
             return {"messages": [AIMessage(content="抱歉，处理您的请求时遇到问题。")]}
 
-        new_state_update = {"messages": [response]}
-        tool_calls = response.additional_kwargs.get("tool_calls", [])
-
-        if tool_calls:
-            log.info(f"agent_node请求调用工具: {[call['function']['name'] for call in tool_calls]}")
-            tool_call = tool_calls[0]
-            tool_name = tool_call['function']['name']
-            tool_args = json.loads(tool_call['function']['arguments'])
-    
-            # 传递给 ToolNode
-            new_state_update["action"] = "tool_call"
-            new_state_update["user_input"] = ""
-            new_state_update["tool_func"] = tool_name
-            new_state_update["tool_func_args"] = tool_args
-
+        new_state_update = {"messages": [response],"user_input":""}
+        tool_info = get_tool_info(response)
+        if tool_info and tool_info.name != "confirm_user_action":
+            new_state_update["tool_info"] = ToolInfo.model_validate(tool_info)
         log.debug(f"--- Agent Node End --- Update: {new_state_update}")
         return new_state_update
 
@@ -131,24 +107,28 @@ def create_space_agent_executor():
 # --- Tool Node ---
 def process_tools_output(state: SpaceState):
     """
-    处理工具的输出，更新状态。
-    优先使用 state 中已有的 'tool_result' (来自外部注入)，
-    否则尝试处理最后一个 ToolMessage。
-    """
-    log.debug(f"--- Process Tools Output Start --- State: {state}")
+    处理工具执行结果，生成 AI 回复
     
+    Args:
+        state: 当前状态
+    
+    Returns:
+        更新后的状态
+    """
     tool_result_external = state.get("tool_result")
-    state.pop("tool_result", None)
-    state.pop("tool_func", None)
-    state.pop("tool_func_args", None)
-    state.pop("action", None)
-    last_message = state["messages"][-1] if state.get("messages") else None
-
     if tool_result_external:
-        log.info(f"使用外部注入的 tool_result: {tool_result_external}. 标记直接结束。")
-        tool_result = ToolResult.model_validate(tool_result_external)
-        return {"messages": [AIMessage(content=tool_result.message)],"completed": True}
-    return {"messages": [last_message] if last_message else []}
+        log.info(f"process_tools_output: external result: {tool_result_external}")
+        if tool_result_external.get("tool_func").startswith("query_"):
+            data = tool_result_external.get("data",[])
+            update_state = {"messages": [AIMessage(content=f"{tool_result_external['message']}\n{data}")],"completed": True}
+        else:
+            update_state = {"messages": [AIMessage(content=tool_result_external["message"])],"completed": True}
+        if "has_answered" in state: 
+            update_state["has_answered"] = True
+        log.debug(f"process_tools_output: Thread ID: {state.get('thread_id')},update state: {update_state}")
+        return update_state
+    
+    return {}
 
 # --- Graph Definition ---
 workflow = StateGraph(SpaceState)
@@ -157,6 +137,7 @@ workflow = StateGraph(SpaceState)
 agent_executor_node = create_space_agent_executor()
 workflow.add_node("agent", agent_executor_node)
 workflow.add_node("tools", ToolNode(read_tools+write_tools))
+workflow.add_node("confirm", ToolNode([confirm_user_action]))
 workflow.add_node("process", process_tools_output)
 
 # 设置入口点
@@ -168,12 +149,14 @@ def route_after_agent(state: SpaceState):
     if state.get("completed") or len(state["messages"]) == 0:
         return END
     last_message = state["messages"][-1]
-    if isinstance(last_message, AIMessage) and state.get("action") == "tool_call" and state.get("tool_func"):
-        log.info(f"工具 {state['tool_func']}执行中断, 等待平台响应....")
-        return "tools"
-    else:
-        log.info("No tool call requested. Ending turn.")
-        return END
+    tool_info = get_tool_info(last_message)
+    if isinstance(last_message, AIMessage) and tool_info:
+        if tool_info.name != "confirm_user_action":
+            return "tools"
+        return "confirm"
+
+    log.info("No tool call requested. Ending turn.")
+    return END
 
 # 添加边
 workflow.add_conditional_edges(
@@ -181,11 +164,14 @@ workflow.add_conditional_edges(
     route_after_agent,
     {
         "tools": "tools",
+        "confirm": "confirm",
         END: END
     }
 )
+
 workflow.add_edge("tools", "process")
 workflow.add_edge("process","agent")
+workflow.add_edge("confirm","agent")
 
 # 编译 Graph
 app = workflow.compile(checkpointer=memory, interrupt_before=["process"])
@@ -211,14 +197,14 @@ def run():
             "completed": False
         }
 
-        final_response = None
         full_response_content = "" # 用于累积助手的完整回复
 
         events = app.stream(inputs, config, stream_mode="values")
         for event in events:
             if "messages" in event and len(event["messages"]) > 0:
                 last_message = event["messages"][-1]
-                if isinstance(last_message, AIMessage) and not hasattr(event,"action") and not hasattr(event,"tool_func"):
+                tool_info = get_tool_info(last_message)
+                if isinstance(last_message, AIMessage) and tool_info:
                     if last_message.content != full_response_content:
                         print(f"助手: {last_message.content[len(full_response_content):]}", end="", flush=True)
                         full_response_content = last_message.content

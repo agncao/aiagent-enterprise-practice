@@ -16,3 +16,7 @@ export PYTHONPATH=/Users/caojm/projects/ai/aiagent-enterprise-practise
 ```bash
 python -m agent.flight.flight_assistant_v0
 ```
+
+```bash
+find /Users/caojm/projects/ai/aiagent-enterprise-practise -name "__pycache__" -type d -exec rm -rf {} +
+```

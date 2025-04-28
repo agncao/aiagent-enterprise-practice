@@ -5,30 +5,33 @@
 这是一个读指令，例如发出查询场景是否存在的指令。
 """
 from langchain_core.tools import tool
-from agent.space.space_types import ToolResult,CommandType
+from agent.space.space_types import CommandInfo,CommandType
 from infrastructure.logger import log
 
 @tool
-def query_scenario(name: str) -> dict:
+def query_scenario(name: str) -> CommandInfo:
     '''
-    根据场景名称查询场景，其用途：
-    1. 当创建场景时需要判断场景是否存在
-    2. 查询场景的基本信息
+    根据场景名称查询场景
 
     Args:
         name (str): 场景名称。
+    Returns:
+        CommandInfo: 查询场景的指令信息
     '''
     log.info(f"execute tool: query_scenario, input: {name}")
-    result = ToolResult(type=CommandType.READ,message=f"向平台发送查询场景指令",func="query_scene", args=locals()).model_dump()
+    result = CommandInfo(type=CommandType.READ,message=f"向平台发送查询场景指令",func="query_scene", args=locals()).model_dump()
     return result
 
 @tool
-def query_scenario_entities() -> dict:
+def query_scenario_entities() -> CommandInfo:
     '''
     查询当前场景所包含的所有实体。
+    
+    Returns:
+        CommandInfo: 查询场景实体的指令信息
     '''
     log.info(f"execute tool: query_scenario_entities")
-    result = ToolResult(type=CommandType.READ,message=f"向平台发送查询场景实体指令",func="query_scene_entities").model_dump()
+    result = CommandInfo(type=CommandType.READ,message=f"向平台发送查询场景实体指令",func="query_scene_entities").model_dump()
     return result
 
 read_tools = [query_scenario, query_scenario_entities]
