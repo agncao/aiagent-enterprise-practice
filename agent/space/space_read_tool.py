@@ -5,33 +5,33 @@
 这是一个读指令，例如发出查询场景是否存在的指令。
 """
 from langchain_core.tools import tool
-from agent.space.space_types import CommandInfo,CommandType
+from agent.space.space_types import CommandType,Operation
 from infrastructure.logger import log
 
-@tool
-def query_scenario(name: str) -> CommandInfo:
-    '''
-    根据场景名称查询场景
+# @tool
+# def query_scenario(name) -> dict:
+#     '''
+#     根据场景名称查询场景
 
-    Args:
-        name (str): 场景名称。
-    Returns:
-        CommandInfo: 查询场景的指令信息
-    '''
-    log.info(f"execute tool: query_scenario, input: {name}")
-    result = CommandInfo(type=CommandType.READ,message=f"向平台发送查询场景指令",func="query_scene", args=locals()).model_dump()
-    return result
+#     Args:
+#         name: 场景名称。
+#     Returns:
+#         dict: 查询场景的指令信息
+#     '''
+#     log.info(f"execute tool: query_scenario, input: {name}")
+#     result = Operation(type=CommandType.READ.value,message=f"向平台发送查询场景指令",func="query_scene", args=locals())
+#     return result
 
 @tool
-def query_scenario_entities() -> CommandInfo:
+def query_scenario_entities() -> dict:
     '''
     查询当前场景所包含的所有实体。
     
     Returns:
-        CommandInfo: 查询场景实体的指令信息
+        dict: 查询场景实体的指令信息
     '''
     log.info(f"execute tool: query_scenario_entities")
-    result = CommandInfo(type=CommandType.READ,message=f"向平台发送查询场景实体指令",func="query_scene_entities").model_dump()
+    result = Operation(type=CommandType.READ.value, message=f"向平台发送查询场景实体指令", func="query_scene_entities", args=None)
     return result
 
-read_tools = [query_scenario, query_scenario_entities]
+read_tools = [query_scenario_entities]

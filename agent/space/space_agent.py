@@ -10,9 +10,8 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langgraph.prebuilt import ToolNode
 from infrastructure.config import config
 from infrastructure.logger import log
-from agent.space.space_types import SpaceState, CommandInfo, ToolInfo
-from agent.space.agent_tool import confirm_user_action
-from agent.space.space_read_tool import query_scenario, read_tools
+from agent.space.space_types import SpaceState, Operation, CommandType
+from agent.space.space_read_tool import read_tools
 from agent.space.space_write_tool import write_tools
 from agent.space.utils.langgraph_utils import get_tool_info
 
@@ -21,55 +20,36 @@ memory = MemorySaver()
 
 # --- Agent Node ---
 def create_space_agent_executor():
-    """创建空间场景 Agent 的执行器节点"""
+    """创建空间场景Agent的执行器节点"""
 
-    space_tools = read_tools + write_tools
+    all_tools = read_tools + write_tools
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """你是一个专业的空间场景助手，帮助用户创建和管理空间场景、添加实体（如卫星、地面站等）。
+        ("system", """你是一个无所不能的航空航天智能分析系统的助手。
+        
+        1. 你的职责是识别用户意图，帮助用户管理场景和实体信息等，例如：查看全部实体、添加地面车、修改场景名等。
+        2. 重要：当用户请求执行某个操作时(例如：查看全部实体、添加地面车、修改场景名等)，即便没有提供任何参数自身提供的默认值立即调用对应的工具。对于未提供的参数：
+           - 如果参数是可选的（Optional），则传递None值
+           - 不要自己生成或猜测参数值，除非用户明确提供
+           - 更不要询问用户提供默认参数
+        3. 天体中心需要解析成英文，比如："地球" -> "Earth"; "月球" -> "Moon"; "火星" -> "Mars" 等。
+        4. 工具会在中断处获得外部系统给出的执行结果，你需要用简洁的概括性语言来描述执行结果，并列举出所执行的参数(如果工具入参不为空的话)。
+        5. 查询类的工具会有返回结果，需要你一一列出返回值。如果没有返回值，请提示用户。
 
-        当前时间: {time}
-        工作流程:
-        1.  问候用户，理解他们的请求意图 (intent)。
-        2.  如果意图是创建场景或添加实体（包括卫星、地面站等）：
-            a. 解析用户输入，提取必要的信息。
-            b. 检查信息是否完整。如果不完整，则请求用户提供缺失的信息。
-            c. 如果信息完整，则必须使用confirm_user_action工具请求用户确认，再调用其他工具。
-            d. 天体中心需要解析成英文，比如："地球" -> "Earth"; "月球" -> "Moon"; "火星" -> "Mars" 等。
-        3.  如果意图是添加实体（包括卫星、地面站等）还需要特别注意：
-            a. 确定在此之前，助手已经成功创建了场景。
-            b. 如果还没创建场景，则请求用户先创建或者查询所需要的场景
-        4.  如果用户的回复是确认信息（例如 '是', '确认'），表示收集的信息正确，执行操作。
-        5.  如果用户的回复是否认信息（例如 '否', '取消'），表示用户的意图理解的不正确，请求用户更正。    
-    
-        重要提示:
-        - 添加任何实体前，都必须确保场景存在。
-        - 收集完工具所需参数后必须先使用confirm_user_action工具请求用户确认，再进行其他工具的调用
-        - 永远不要跳过用户确认步骤，这是强制性的要求
+        重要提示：
+        1. 当用户请求执行某个操作时，即使用户没有提供所有参数，也立即使用对应的工具。不要询问用户是否要使用默认值，直接执行。
+        2. 语言要自然简洁
 
-        示例对话:
-        用户: "我想创建一个名为'太空任务'的场景，中心天体是地球，时间从2025-01-01到2025-01-02"
-        助手: [使用confirm_user_action工具] "请确认是否要创建以下场景：
-        - name: 太空任务
-        - centralBody: Earth
-        - startTime: 2025-01-01T00:00:00.000Z
-        - endTime: 2025-01-02T00:00:00.000Z
-        请输入 '是' 或 '否'。"
-        用户: "是"
-        助手: [使用create_scenario工具] "场景'太空任务'已成功创建！"
 
-        用户: "添加一颗卫星，TLE是[...]"
-        助手: [使用confirm_user_action工具] "请确认是否要添加以下卫星：
-        - TLEs: [...]
-        请输入 '是' 或 '否'。"
-        用户: "是"
-        助手: [使用add_satellite_entity工具] "卫星已成功添加到场景中。"
-
-        可用工具: {tool_names}\n"""),
+        当前时间: {time}。
+        可用的读工具: {read_tools_names}。
+        可用的写工具: {write_tools_names}。
+        """),
         MessagesPlaceholder(variable_name="history_messages"),
         ("human", "{user_input}"),
     ]).partial(
         time=datetime.now,
-        tool_names=", ".join([t.name for t in space_tools])
+        read_tools_names=", ".join([t.name for t in read_tools]),
+        write_tools_names=", ".join([t.name for t in write_tools])
     )
 
     llm = ChatOpenAI(
@@ -79,35 +59,43 @@ def create_space_agent_executor():
         temperature=0.1, # 对于需要精确遵循指令的任务，温度设低一些
         streaming=True
     )
-    llm_with_tools = llm.bind_tools(tools=space_tools+[confirm_user_action])
+    llm_with_tools = llm.bind_tools(tools=all_tools)
     def agent_node(state: SpaceState):
         log.debug("===========Agent Node Start============ \nState: ", state)
         history_messages = state.get('messages', [])
         chain = RunnablePassthrough.assign(
             history_messages=lambda x: history_messages,
         ) | prompt | llm_with_tools
-
-        # 调用 LLM
-        try:
-            response = chain.invoke({"user_input": state["user_input"]})
-            log.debug(f"agent_node Response: {response}")
-        except Exception as e:
-            log.error(f"agent_node error: {e}")
-            return {"messages": [AIMessage(content="抱歉，处理您的请求时遇到问题。")]}
-
-        new_state_update = {"messages": [response],"user_input":""}
-        tool_info = get_tool_info(response)
-        if tool_info and tool_info.name != "confirm_user_action":
-            new_state_update["tool_info"] = ToolInfo.model_validate(tool_info)
-        log.debug(f"--- Agent Node End --- Update: {new_state_update}")
-        return new_state_update
+        
+        if "user_input" in state and state["user_input"]:
+            # 重置 completed 标志，确保新的用户输入可以被处理
+            update_state = {"completed": False}
+            
+            try:
+                response = chain.invoke({"user_input": state["user_input"]})
+                log.debug(f"agent_node Response: {response}")
+                
+                new_state_update = {"messages": [response], "user_input": None}
+                # tool_info = get_tool_info(response)
+                # if tool_info:
+                #     new_state_update["tool_info"] = tool_info
+                return new_state_update
+            except Exception as e:
+                log.error(f"agent_node error: {e}")
+                return {"messages": [AIMessage(content="抱歉，处理您的请求时遇到问题。")], "completed": True}
+        
+        return {}
 
     return agent_node
 
 # --- Tool Node ---
+def pre_process(state):
+    """工具执行后的预处理节点，用于统一中断点"""
+    log.debug(f"工具执行完毕，准备中断，状态：{state}")
+    return state
+
 def process_tools_output(state: SpaceState):
-    """
-    处理工具执行结果，生成 AI 回复
+    """处理工具执行结果
     
     Args:
         state: 当前状态
@@ -115,17 +103,45 @@ def process_tools_output(state: SpaceState):
     Returns:
         更新后的状态
     """
-    tool_result_external = state.get("tool_result")
-    if tool_result_external:
-        log.info(f"process_tools_output: external result: {tool_result_external}")
-        if tool_result_external.get("tool_func").startswith("query_"):
-            data = tool_result_external.get("data",[])
-            update_state = {"messages": [AIMessage(content=f"{tool_result_external['message']}\n{data}")],"completed": True}
-        else:
-            update_state = {"messages": [AIMessage(content=tool_result_external["message"])],"completed": True}
-        if "has_answered" in state: 
-            update_state["has_answered"] = True
-        log.debug(f"process_tools_output: Thread ID: {state.get('thread_id')},update state: {update_state}")
+    log.debug("========process_tools_output===========")
+    tool_call_response = state.get("tool_call_response")
+    if tool_call_response:
+        log.info(f"process_tools_output: external result: {tool_call_response}")
+        
+        # 获取工具名称和参数，用于更自然的语言描述
+        tool_func = tool_call_response.get("tool_func", "")
+        args = tool_call_response.get("args", {})
+        success = tool_call_response.get("success", False)
+        message = tool_call_response.get("message", "")
+        tool_call_id = tool_call_response.get("tool_call_id", "")
+        
+        # 展示参数信息
+        call_info=""
+        if args and any(args.values()):
+            args_str = ", ".join([f"{k}={v}" for k, v in args.items() if v is not None])
+            call_info = f"参数：{args_str}"
+
+        if success:
+            # 查询类工具，会有返回结果
+            if tool_func in [getattr(tool, "name", None) for tool in read_tools]:
+                message = "没有查询到相关数据"
+                if tool_call_response.get("data", []):
+                    data_str = "\n".join([f"- {item}" for item in tool_call_response.get("data", [])])
+                    call_info = f"{call_info}，查询结果：\n{data_str}"
+        content = f"{message}，{call_info}"
+        
+        # 创建工具响应消息和AI响应消息
+        tool_message = ToolMessage(content=content, tool_call_id=tool_call_id)
+        ai_message = AIMessage(content=content)
+        
+        update_state = {
+            "messages": [tool_message, ai_message], 
+            "completed": True,
+            "tool_info":None,
+            "tool_call_response":None
+        }
+        
+        log.debug(f"process_tools_output: update state: {update_state}")
         return update_state
     
     return {}
@@ -136,9 +152,11 @@ workflow = StateGraph(SpaceState)
 # 添加节点
 agent_executor_node = create_space_agent_executor()
 workflow.add_node("agent", agent_executor_node)
-workflow.add_node("tools", ToolNode(read_tools+write_tools))
-workflow.add_node("confirm", ToolNode([confirm_user_action]))
+workflow.add_node("read_tools", ToolNode(read_tools))
+workflow.add_node("write_tools", ToolNode(write_tools))
+workflow.add_node("pre_process", pre_process)
 workflow.add_node("process", process_tools_output)
+
 
 # 设置入口点
 workflow.set_entry_point("agent")
@@ -147,14 +165,21 @@ workflow.set_entry_point("agent")
 def route_after_agent(state: SpaceState):
     """决定 Agent 执行后的下一个节点"""
     if state.get("completed") or len(state["messages"]) == 0:
+        log.debug("State completed or no messages, ending turn.")
         return END
+    
     last_message = state["messages"][-1]
     tool_info = get_tool_info(last_message)
+    log.debug(f"Tool info from message: {tool_info}")
+    
     if isinstance(last_message, AIMessage) and tool_info:
-        if tool_info.name != "confirm_user_action":
-            return "tools"
-        return "confirm"
-
+        if tool_info['name'] in [t.name for t in read_tools]:
+            log.debug(f"Routing to read_tools for tool: {tool_info['name']}")
+            return "read_tools"
+        elif tool_info['name'] in [t.name for t in write_tools]:
+            log.debug(f"Routing to write_tools for tool: {tool_info['name']}")
+            return "write_tools"
+    
     log.info("No tool call requested. Ending turn.")
     return END
 
@@ -163,18 +188,19 @@ workflow.add_conditional_edges(
     "agent",
     route_after_agent,
     {
-        "tools": "tools",
-        "confirm": "confirm",
+        "read_tools": "read_tools",
+        "write_tools": "write_tools",
         END: END
     }
 )
 
-workflow.add_edge("tools", "process")
-workflow.add_edge("process","agent")
-workflow.add_edge("confirm","agent")
+workflow.add_edge("read_tools", "pre_process")
+workflow.add_edge("write_tools", "pre_process")
+workflow.add_edge("pre_process", "process")
+workflow.add_edge("process", "agent")
 
 # 编译 Graph
-app = workflow.compile(checkpointer=memory, interrupt_before=["process"])
+app = workflow.compile(checkpointer=memory, interrupt_after=["pre_process"])
 
 # draw_graph(app,"space_agent_graph")
 

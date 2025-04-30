@@ -3,7 +3,18 @@ from pydantic import BaseModel, Field
 from enum import Enum
 from typing_extensions import TypedDict, Annotated
 from langgraph.graph import add_messages
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+def get_yesterday_midnight_utc():
+    """返回昨天0点的UTC时间，ISO格式"""
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday = today - timedelta(days=1)
+    return yesterday.isoformat()
+
+def get_today_midnight_utc():
+    """返回今天0点的UTC时间，ISO格式"""
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return today.isoformat()
 
 class CommandType(Enum):
     """
@@ -11,15 +22,16 @@ class CommandType(Enum):
     """
     READ = "query"
     WRITE = "write"
+
 class ScenarioConfig(BaseModel):
     """
     创建场景所需参数
     """
-    name: str = Field(None, description="场景名称")
+    name: str = Field("新建场景", description="场景名称")
     centralBody: str = Field("Earth", description="中心天体")
-    startTime: datetime = Field(None, description="开始时间(UTC)")
-    endTime: datetime = Field(None, description="结束时间(UTC)")
-    description: Optional[str] = Field(None, description="场景描述")
+    startTime: str = Field(default_factory=get_yesterday_midnight_utc, description="开始时间(UTC)")
+    endTime: str = Field(default_factory=get_today_midnight_utc, description="结束时间(UTC)")
+    description: Optional[str] = Field(None, description="场景描述(可选)")
 
 class EntityPosition(BaseModel):
     """
@@ -60,16 +72,18 @@ class EntityConfig(BaseModel):
 
 class SatelliteTLEParams(BaseModel):
     """
-    创建实体为卫星所需的参数
+    创建实体为卫星可能需要的参数，之所以是可能，因为所有参数均为可选，允许全空
     """
-    # 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"
-    start: Optional[datetime] = Field(None, description="开始时间(UTC)")
-    # 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"
-    end: Optional[datetime] = Field(None, description="结束时间(UTC)")
+    # 两行轨道数据，例如：
+    # 1 25544U 98067A   23001.75382237  .00000000  00000-0  00000-0  00000-0
+    # 2 25544  51.6335  100.0000  0000000  000.0000  000.0000  00000-0 00000
+    TLEs: Optional[List[str]] = Field(None, description="两行轨道数据(可选)")
     # 卫星编号，例如："SL-44291"
-    satellite_number: Optional[str] = Field(None, description="卫星编号")
-    # 两行轨道数据
-    TLEs: List[str] = Field(None, description="必须是严格遵守TLE格式的两行轨道数据")
+    satellite_number: Optional[str] = Field(None, description="卫星编号(可选)")
+    # 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"
+    start: Optional[str] = Field(None, description="开始时间(UTC)(可选)")
+    # 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"
+    end: Optional[str] = Field(None, description="结束时间(UTC)(可选)")
 
 class CommandResponse(TypedDict):
     """
@@ -83,25 +97,20 @@ class CommandResponse(TypedDict):
     tool_call_id: str  # 指令执行的工具调用 ID
     thread_id: str  # 会话 ID
 
-class ToolInfo(BaseModel):
+class Operation(TypedDict, total=False):
     """
-    从 SpaceState 中获取工具调用的 name, args, type, call_id 等信息
+    向平台发出的操作指令
     """
-    name: str = Field('', description="工具名称")
-    args: dict = Field(None, description="工具参数")
-    type: str = Field('', description="工具类型")
-    call_id: str = Field('', description="工具调用 ID")
+    # 指令生成成功与否
+    success: bool
+    # 指令生成与否的原因
+    message: str
+    # 指令参数
+    args: Optional[Dict[str, Any]]
+    # 指令名称
+    func: str
 
-class CommandInfo(BaseModel):
-    """
-    智能体调用工具后，工具向其他应用系统发出的指令信息
-    """
-    success: bool = Field(True, description="指令是否创建成功")
-    data: list[Any] = []
-    message: str = Field('', description="指令创建成功或者失败的消息")
-    args: Optional[Dict[str, Any]] = Field(None, description="给其他应用系统的发送指令的参数")
-    func: str = Field('', description="给其他应用系统的发送指令的名称")
-    type: Optional[CommandType] = Field(CommandType.WRITE, description="命令类型")
+
 class SpaceState(TypedDict):
     """
     Agent 的状态定义
@@ -110,14 +119,7 @@ class SpaceState(TypedDict):
     messages: Annotated[list, add_messages]
     # 用户输入
     user_input: str
-    # 外部系统工具调用信息
-    tool_info: Optional[ToolInfo]
-    # 工具调用返回结果
-    tool_result: Optional[CommandInfo]
+    # 平台执行工具发出的指令返回结果
+    tool_call_response: Optional[Any]
     # 设置完成标志，表示工具执行已完成
     completed: bool = False
-    # 用户是否已确认了参数信息
-    has_answered: bool = False
-
-    def __str__(self):
-        return str(self.__dict__)

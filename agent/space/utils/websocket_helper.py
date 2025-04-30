@@ -11,7 +11,7 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 from infrastructure.logger import log
 from agent.space.space_agent import app
 from agent.space.utils.langgraph_utils import get_tool_info
-from agent.space.space_types import ToolInfo, CommandInfo
+from agent.space.space_types import Operation,CommandType
 
 
 class WebSocketMessageHandler:
@@ -31,7 +31,7 @@ class WebSocketMessageHandler:
     
     def _generate_message_key(self, msg_type: str, content: Any) -> str:
         """生成消息唯一键，用于去重"""
-    
+
         content_str = json.dumps(content) if isinstance(content, dict) else str(content)
         content_hash = hashlib.md5(content_str.encode()).hexdigest()
         return f"{msg_type}:{content_hash}"
@@ -95,8 +95,6 @@ class WebSocketMessageHandler:
             initial_state =AgentState(
                 messages=[HumanMessage(content=user_input)],
                 user_input=user_input,
-                tool_info=None,
-                has_answered=False,
                 completed=False
             )
             self.cached_messages.clear()
@@ -109,23 +107,24 @@ class WebSocketMessageHandler:
                 if "messages" in event and len(event["messages"]) > 0:
                     last_message = event["messages"][-1]
                     tool_info = get_tool_info(last_message)
-                    if tool_info:
-                        pass
-                    else:
-                        tool_info = event.get("tool_info", None)
-                    
                     # 处理 AI 消息
                     if isinstance(last_message, AIMessage) and last_message.content:
                         await self.send_message("ai_message", last_message.content, thread_id)
                 
                     # 处理工具调用
-                    elif isinstance(last_message, ToolMessage) and tool_info and not event.get("has_answered", False):
-                        tool_data = {
-                            "tool_func": tool_info.name,
-                            "tool_func_args": tool_info.args,
-                            "tool_call_id": tool_info.call_id
-                        }
-                        await self.send_message("tool_call", tool_data, thread_id)
+                    elif isinstance(last_message, ToolMessage) :
+                        if isinstance(last_message.content, str):
+                            tool_info = json.loads(last_message.content)
+                        else:
+                            tool_info = last_message.content
+            
+                        if tool_info and not event.get("tool_call_response"):
+                            tool_data = {
+                                "tool_func": tool_info.get("func"),
+                                "tool_func_args": tool_info.get("args",None),
+                                "tool_call_id": tool_info.get("call_id",None)
+                            }
+                            await self.send_message("tool_call", tool_data, thread_id)
             
             # 发送结束消息
             await self.send_message("end", None, thread_id)
@@ -144,14 +143,11 @@ class WebSocketMessageHandler:
         log.info(f"收到工具执行结果: {data}")
         try:
             config_invoke = {"configurable": {"thread_id": data["thread_id"]}}
-            if data.get("tool_func") != "confirm_user_action":
-                # 将整个data作为tool_result传递，而不是尝试访问不存在的result字段
-                self.app.update_state(config_invoke, 
-                {
-                    "tool_result": data,
-                    "has_answered": True
-                })
-            await self.process_event_stream(thread_id=data["thread_id"])
+            self.app.update_state(config_invoke, 
+            {
+                "tool_call_response": data
+            })
+            await self.process_event_stream(data["thread_id"],None)   #需要回到中断处
         except Exception as e:
             log.error(f"工具结果处理错误: {e}")
             await self.send_message("error", str(e), data.get("thread_id", "unknown"))
