@@ -94,7 +94,6 @@ class CommandResponse(TypedDict):
     message: str= ''  # 指令执行返回来的消息
     tool_func: str  # 指令执行的工具名
     args: Dict[str, Any]  # 指令执行的参数
-    tool_call_id: str  # 指令执行的工具调用 ID
     thread_id: str  # 会话 ID
 
 class Operation(TypedDict, total=False):

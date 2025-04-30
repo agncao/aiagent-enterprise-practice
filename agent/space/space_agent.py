@@ -88,12 +88,6 @@ def create_space_agent_executor():
 
     return agent_node
 
-# --- Tool Node ---
-def pre_process(state):
-    """工具执行后的预处理节点，用于统一中断点"""
-    log.debug(f"工具执行完毕，准备中断，状态：{state}")
-    return state
-
 def process_tools_output(state: SpaceState):
     """处理工具执行结果
     
@@ -113,13 +107,12 @@ def process_tools_output(state: SpaceState):
         args = tool_call_response.get("args", {})
         success = tool_call_response.get("success", False)
         message = tool_call_response.get("message", "")
-        tool_call_id = tool_call_response.get("tool_call_id", "")
         
         # 展示参数信息
         call_info=""
         if args and any(args.values()):
-            args_str = ", ".join([f"{k}={v}" for k, v in args.items() if v is not None])
-            call_info = f"参数：{args_str}"
+            args_str = "\n- ".join([f"{k} = {v}" for k, v in args.items() if v is not None])
+            call_info = f"参数：\n- {args_str}"
 
         if success:
             # 查询类工具，会有返回结果
@@ -130,12 +123,10 @@ def process_tools_output(state: SpaceState):
                     call_info = f"{call_info}，查询结果：\n{data_str}"
         content = f"{message}，{call_info}"
         
-        # 创建工具响应消息和AI响应消息
-        tool_message = ToolMessage(content=content, tool_call_id=tool_call_id)
         ai_message = AIMessage(content=content)
         
         update_state = {
-            "messages": [tool_message, ai_message], 
+            "messages": [ai_message], 
             "completed": True,
             "tool_info":None,
             "tool_call_response":None
@@ -154,7 +145,6 @@ agent_executor_node = create_space_agent_executor()
 workflow.add_node("agent", agent_executor_node)
 workflow.add_node("read_tools", ToolNode(read_tools))
 workflow.add_node("write_tools", ToolNode(write_tools))
-workflow.add_node("pre_process", pre_process)
 workflow.add_node("process", process_tools_output)
 
 
@@ -194,13 +184,12 @@ workflow.add_conditional_edges(
     }
 )
 
-workflow.add_edge("read_tools", "pre_process")
-workflow.add_edge("write_tools", "pre_process")
-workflow.add_edge("pre_process", "process")
+workflow.add_edge("read_tools", "process")
+workflow.add_edge("write_tools", "process")
 workflow.add_edge("process", "agent")
 
 # 编译 Graph
-app = workflow.compile(checkpointer=memory, interrupt_after=["pre_process"])
+app = workflow.compile(checkpointer=memory, interrupt_before=["process"])
 
 # draw_graph(app,"space_agent_graph")
 

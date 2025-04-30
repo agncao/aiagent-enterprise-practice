@@ -31,7 +31,7 @@ def query_scenario_entities() -> dict:
         dict: 查询场景实体的指令信息
     '''
     log.info(f"execute tool: query_scenario_entities")
-    result = Operation(type=CommandType.READ.value, message=f"向平台发送查询场景实体指令", func="query_scene_entities", args=None)
+    result = Operation(type=CommandType.READ.value, message=f"向平台发送查询场景实体指令", func="query_scenario_entities", args=None)
     return result
 
 read_tools = [query_scenario_entities]

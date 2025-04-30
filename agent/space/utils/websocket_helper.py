@@ -67,7 +67,6 @@ class WebSocketMessageHandler:
         elif msg_type == "tool_call":
             message["tool_func"] = content.get("tool_func")
             message["tool_func_args"] = content.get("tool_func_args")
-            message["tool_call_id"] = content.get("tool_call_id")
         elif msg_type == "error":
             message["message"] = content
         elif msg_type == "end":
@@ -121,8 +120,7 @@ class WebSocketMessageHandler:
                         if tool_info and not event.get("tool_call_response"):
                             tool_data = {
                                 "tool_func": tool_info.get("func"),
-                                "tool_func_args": tool_info.get("args",None),
-                                "tool_call_id": tool_info.get("call_id",None)
+                                "tool_func_args": tool_info.get("args",None)
                             }
                             await self.send_message("tool_call", tool_data, thread_id)
             

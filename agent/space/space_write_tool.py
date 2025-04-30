@@ -7,6 +7,8 @@ from typing import List, Optional, Dict, Any, TypedDict
 from langchain_core.tools import tool
 from agent.space.space_types import ScenarioConfig, EntityConfig, SatelliteTLEParams, Operation,get_yesterday_midnight_utc,get_today_midnight_utc
 from infrastructure.logger import log
+from langchain_core.runnables import RunnableConfig
+
 
 # def default_serializer(obj):
 #     if isinstance(obj, datetime):
@@ -99,8 +101,6 @@ def add_satellite_entity(
     """
         
     log.info(f"add_satellite_entity 已发送卫星计算指令: SatNo={satellite_number}, start={start}, end={end}, TLEs={TLEs}")
-    log.error("ADD_SATELLITE_ENTITY 被调用！")  # 使用ERROR级别确保显示
-    
     args = {
         "TLEs": TLEs,
         "satellite_number": satellite_number,
