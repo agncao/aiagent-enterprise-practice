@@ -100,36 +100,38 @@ class WebSocketMessageHandler:
             events_stream = self.app.stream(initial_state, config_invoke, stream_mode="values")
         else:
             events_stream = self.app.stream(None, config_invoke, stream_mode="values")
-        try:
-            for event in events_stream:
-                # 处理消息
-                if "messages" in event and len(event["messages"]) > 0:
-                    last_message = event["messages"][-1]
-                    tool_info = get_tool_info(last_message)
-                    # 处理 AI 消息
+        for event in events_stream:
+            # 处理消息
+            if "messages" in event and len(event["messages"]) > 0:
+                last_message = event["messages"][-1]
+                tool_info = get_tool_info(last_message)
+                try:
                     if isinstance(last_message, AIMessage) and last_message.content:
                         await self.send_message("ai_message", last_message.content, thread_id)
-                
                     # 处理工具调用
                     elif isinstance(last_message, ToolMessage) :
-                        if isinstance(last_message.content, str):
-                            tool_info = json.loads(last_message.content)
-                        else:
-                            tool_info = last_message.content
-            
-                        if tool_info and not event.get("tool_call_response"):
-                            tool_data = {
-                                "tool_func": tool_info.get("func"),
-                                "tool_func_args": tool_info.get("args",None)
-                            }
-                            await self.send_message("tool_call", tool_data, thread_id)
-            
-            # 发送结束消息
-            await self.send_message("end", None, thread_id)
-            
-        except Exception as e:
-            log.error(f"事件流处理错误: {e}")
-            raise e
+                        try:
+                            if isinstance(last_message.content, str):
+                                tool_info = json.loads(last_message.content)
+                            else:
+                                tool_info = last_message.content
+                
+                            if tool_info and not event.get("tool_call_response"):
+                                tool_data = {
+                                    "tool_func": tool_info.get("func"),
+                                    "tool_func_args": tool_info.get("args",None)
+                                }
+                                await self.send_message("tool_call", tool_data, thread_id)
+                        except Exception as e:
+                            log.error(f"工具调用处理错误: {e}")
+                            raise e
+                except Exception as e:
+                    log.error(f"事件流处理错误: {e}")
+                    raise e
+        # 发送结束消息
+        await self.send_message("end", None, thread_id)
+
+                
     
     async def handle_tool_result(self, data: Dict[str, Any]) -> None:
         """

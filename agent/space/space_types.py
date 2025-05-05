@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any, TypedDict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,validator
 from enum import Enum
 from typing_extensions import TypedDict, Annotated
 from langgraph.graph import add_messages
@@ -33,20 +33,19 @@ class ScenarioConfig(BaseModel):
     endTime: str = Field(default_factory=get_today_midnight_utc, description="结束时间(UTC)")
     description: Optional[str] = Field(None, description="场景描述(可选)")
 
-class EntityPosition(BaseModel):
+class EntityPosition(TypedDict):
     """
     实体位置的参数信息
     """
-    longitude: float = Field(None, description="经度")
-    latitude: float = Field(None, description="纬度")
-    height: Optional[float] = Field(None, description="高度")
+    longitude: Optional[float] = Field(None, description="经度")
+    latitude: Optional[float] = Field(None, description="纬度")
+    height: Optional[float] = Field(None, description="高度，单位：米")
 
 class EntityType(Enum):
     """
     实体类型
     表示在空物体的类型，例如：地面站、卫星、飞机、传感器、地面车等
     """
-    GROUND_STATION = "ground_station"
     PLACE = "place"                   # 地点
     TARGET = "target"                 # 目标点
     FACILITY = "facility"             # 地面站
@@ -65,10 +64,26 @@ class EntityConfig(BaseModel):
     """
     创建除卫星之外的实体所需参数
     """
-    entityType: EntityType = Field(None, description="实体类型")
+    entityType: Optional[EntityType] = Field(None, description="实体类型") 
     name: Optional[str] = Field(None, description="实体名称")
-    position: EntityPosition = Field(None, description="实体位置")
+    position: Optional[EntityPosition] = Field(None, description="实体位置")
     properties: Optional[Dict[str, Any]] = Field(None, description="实体属性")
+
+    @validator("entityType", pre=True)
+    def convert_entity_type(cls, v):
+        """将字符串自动转换为枚举实例"""
+        if isinstance(v, str):
+            try:
+                return EntityType(v.lower())
+            except ValueError:
+                pass  # 保持原始值触发后续验证
+        return v
+
+    class Config:
+        use_enum_values = True
+        json_encoders = {
+            EntityType: lambda e: e.value  # 确保枚举序列化为字符串
+        }
 
 class SatelliteTLEParams(BaseModel):
     """

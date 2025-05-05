@@ -54,3 +54,26 @@ def is_json_format(s: str) -> bool:
                 return s[i] == '"'
     
     return True
+
+def valid_tool_call(last_message):
+    errors = []  # 初始化 errors 列表
+    
+    if last_message and last_message.additional_kwargs and last_message.additional_kwargs.get("tool_calls", []):
+        tool_calls = last_message.additional_kwargs.get("tool_calls", [])
+        if not tool_calls:
+            return
+
+        # 检测无效工具调用
+        if hasattr(last_message, 'invalid_tool_calls') and last_message.invalid_tool_calls:
+            for invalid_call in last_message.invalid_tool_calls:  # 使用 last_message 而非 response
+                error_info = {
+                    "tool": invalid_call.get("name"),
+                    "args": invalid_call.get("args"),
+                    "error": invalid_call.get("error") or "参数验证失败"
+                }
+                errors.append(f"工具 {error_info['tool']} 调用失败: {error_info['error']}")
+        
+    # 统一处理错误
+    if errors:
+        error_msg = "工具调用参数错误:\n" + "\n".join(errors)
+        raise ValueError(error_msg) 

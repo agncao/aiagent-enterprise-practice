@@ -13,7 +13,7 @@ from infrastructure.logger import log
 from agent.space.space_types import SpaceState, Operation, CommandType
 from agent.space.space_read_tool import read_tools
 from agent.space.space_write_tool import write_tools
-from agent.space.utils.langgraph_utils import get_tool_info
+from agent.space.utils.langgraph_utils import get_tool_info,valid_tool_call
 
 # 初始化内存检查点
 memory = MemorySaver()
@@ -27,13 +27,15 @@ def create_space_agent_executor():
         ("system", """你是一个无所不能的航空航天智能分析系统的助手。
         
         1. 你的职责是识别用户意图，帮助用户管理场景和实体信息等，例如：查看全部实体、添加地面车、修改场景名等。
-        2. 重要：当用户请求执行某个操作时(例如：查看全部实体、添加地面车、修改场景名等)，即便没有提供任何参数自身提供的默认值立即调用对应的工具。对于未提供的参数：
+        2. 当用户只输入了一个航天航空专业名词时(例如：场景、地面站)，可尝试请求创建场景、添加地面站。
+        3. 重要：当请求执行某个操作时(例如：查看全部实体、添加地面车、修改场景名等)，即便没有提供任何参数自身提供的默认值立即调用对应的工具。对于未提供的参数：
            - 如果参数是可选的（Optional），则传递None值
            - 不要自己生成或猜测参数值，除非用户明确提供
            - 更不要询问用户提供默认参数
-        3. 天体中心需要解析成英文，比如："地球" -> "Earth"; "月球" -> "Moon"; "火星" -> "Mars" 等。
-        4. 工具会在中断处获得外部系统给出的执行结果，你需要用简洁的概括性语言来描述执行结果，并列举出所执行的参数(如果工具入参不为空的话)。
-        5. 查询类的工具会有返回结果，需要你一一列出返回值。如果没有返回值，请提示用户。
+        4. 天体中心需要解析成英文，比如："地球" -> "Earth"; "月球" -> "Moon"; "火星" -> "Mars" 等。
+        5. 在生成工具调用参数时，必须使用严格的 JSON 格式。
+        6. 工具会在中断处获得外部系统给出的执行结果，你需要用简洁的概括性语言来描述执行结果，并列举出所执行的参数(如果工具入参不为空的话)。
+        7. 查询类的工具会有返回结果，需要你一一列出返回值。如果没有返回值，请提示用户。
 
         重要提示：
         1. 当用户请求执行某个操作时，即使用户没有提供所有参数，也立即使用对应的工具。不要询问用户是否要使用默认值，直接执行。
@@ -61,7 +63,7 @@ def create_space_agent_executor():
     )
     llm_with_tools = llm.bind_tools(tools=all_tools)
     def agent_node(state: SpaceState):
-        log.debug("===========Agent Node Start============ \nState: ", state)
+        log.debug(f"===========Agent Node Start============ \nState: {state}")
         history_messages = state.get('messages', [])
         chain = RunnablePassthrough.assign(
             history_messages=lambda x: history_messages,
@@ -74,11 +76,10 @@ def create_space_agent_executor():
             try:
                 response = chain.invoke({"user_input": state["user_input"]})
                 log.debug(f"agent_node Response: {response}")
+                if isinstance(response, AIMessage):
+                    valid_tool_call(response)
                 
                 new_state_update = {"messages": [response], "user_input": None}
-                # tool_info = get_tool_info(response)
-                # if tool_info:
-                #     new_state_update["tool_info"] = tool_info
                 return new_state_update
             except Exception as e:
                 log.error(f"agent_node error: {e}")

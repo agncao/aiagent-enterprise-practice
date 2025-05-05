@@ -5,7 +5,7 @@
 """
 from typing import List, Optional, Dict, Any, TypedDict
 from langchain_core.tools import tool
-from agent.space.space_types import ScenarioConfig, EntityConfig, SatelliteTLEParams, Operation,get_yesterday_midnight_utc,get_today_midnight_utc
+from agent.space.space_types import ScenarioConfig, EntityConfig, SatelliteTLEParams, Operation,get_yesterday_midnight_utc,get_today_midnight_utc,EntityType,EntityPosition
 from infrastructure.logger import log
 from langchain_core.runnables import RunnableConfig
 
@@ -58,27 +58,34 @@ def rename_scenerio(new_name) -> dict:
     return Operation(message=f"向平台发送重命名场景指令", func="rename_scenerio", args=args)
 
 @tool(args_schema=EntityConfig)
-def add_point_entity(entityType, name, position, properties) -> dict:
+def add_point_entity(
+    entityType: Optional[str] = None,  # 直接使用枚举类型
+    name: Optional[str] = None,
+    position: Optional[dict] = None,
+    properties: Optional[dict] = None
+) -> dict:
     """
     向当前场景添加一个实体(例如：地点、地面站、传感器等)
-    但不包括向当前场景添加卫星
-
+    
     Args:
         entityType: 实体类型。
-        name : 实体名称(可选)。
-        position: 位置信息 (例如 {"longitude": 116.0, "latitude": 40.0})。
-        properties: 其他属性(可选)。
-
+        name: 实体名称。
+        position: 实体位置。
+        properties: 实体属性。
     Returns:
         dict: 添加实体的指令信息。
     """
+    # 自动获得经过验证的枚举实例
+    log.info(f"接收到的实体类型：{type(entityType)} {entityType}")
+    
+    # 构造参数时直接使用枚举值
     args = {
         "entityType": entityType,
-        "name": name,
+        "name": name or "未命名实体",
         "position": position,
-        "properties": properties
+        "properties": properties or {}
     }
-    return Operation(message=f"向平台发送添加实体指令", func="add_point_entity", args=args)
+    return Operation(message="添加实体指令已发送", func="add_point_entity", args=args)
 
 @tool(args_schema=SatelliteTLEParams)
 def add_satellite_entity(
