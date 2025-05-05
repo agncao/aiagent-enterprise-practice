@@ -3,37 +3,34 @@ from pydantic import BaseModel, Field,validator
 from enum import Enum
 from typing_extensions import TypedDict, Annotated
 from langgraph.graph import add_messages
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone 
 
-def get_yesterday_midnight_utc():
-    """返回昨天0点的UTC时间，ISO格式"""
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday = today - timedelta(days=1)
-    return yesterday.isoformat()
-
-def get_today_midnight_utc():
-    """返回今天0点的UTC时间，ISO格式"""
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    return today.isoformat()
-
-class CommandType(Enum):
+def get_utc_strings(dt: datetime):
     """
-    指令类型
+    将dt及dt的前一天生成UTC 时间的 ISO 8601 格式字符串 (带 Z)，例如: "2023-10-26T00:00:00.000Z"
+    :return: (pre_day_str, current_day_str)：入参的前一天和入参当天的UTC时间，格式：YYYY-MM-DDTHH:mm:ss.sssZ
     """
-    READ = "query"
-    WRITE = "write"
+    pre_day_datetime = dt - timedelta(days=1)
+    format = "%Y-%m-%dT00:00:00.000Z"
+
+    # 格式化为 ISO 8601 字符串 (带 Z)
+    pre_day_str = pre_day_datetime.strftime(format)
+    current_day_str = dt.strftime(format)
+
+    return pre_day_str, current_day_str
+
 
 class ScenarioConfig(BaseModel):
     """
     创建场景所需参数
     """
-    name: str = Field("新建场景", description="场景名称")
-    centralBody: str = Field("Earth", description="中心天体")
-    startTime: str = Field(default_factory=get_yesterday_midnight_utc, description="开始时间(UTC)")
-    endTime: str = Field(default_factory=get_today_midnight_utc, description="结束时间(UTC)")
+    name: Optional[str] = Field("新建场景", description="场景名称")
+    centralBody: Optional[str] = Field("Earth", description="中心天体")
+    startTime: Optional[str] = Field(None, description="开始时间(UTC),格式：YYYY-MM-DDTHH:mm:ss.sssZ")
+    endTime: Optional[str] = Field(None, description="结束时间(UTC),格式：YYYY-MM-DDTHH:mm:ss.sssZ")
     description: Optional[str] = Field(None, description="场景描述(可选)")
 
-class EntityPosition(TypedDict):
+class EntityPosition(TypedDict): 
     """
     实体位置的参数信息
     """
@@ -60,9 +57,27 @@ class EntityType(Enum):
     AREA_TARGET = "areaTarget"        # 区域目标
     CHAIN = "chain"                   # 链路
 
+# 新增：定义 EntityType 到中文名称的映射
+ENTITY_TYPE_TEXT = {
+    EntityType.PLACE.value: "地点",
+    EntityType.TARGET.value: "目标点",
+    EntityType.FACILITY.value: "地面站",
+    EntityType.AIRCRAFT.value: "飞机",
+    EntityType.MISSILE.value: "导弹",
+    EntityType.SATELLITE.value: "卫星",
+    EntityType.SENSOR: "传感器",
+    EntityType.GROUND_VEHICLE.value: "地面车",
+    EntityType.SHIP.value: "船",
+    EntityType.LAUNCH_VEHICLE.value: "火箭",
+    EntityType.LINE_TARGET.value: "线目标",
+    EntityType.AREA_TARGET.value: "区域目标",
+    EntityType.CHAIN.value: "链路",
+}
+
+
 class EntityConfig(BaseModel):
     """
-    创建除卫星之外的实体所需参数
+    创建实体所需参数
     """
     entityType: Optional[EntityType] = Field(None, description="实体类型") 
     name: Optional[str] = Field(None, description="实体名称")
@@ -85,9 +100,9 @@ class EntityConfig(BaseModel):
             EntityType: lambda e: e.value  # 确保枚举序列化为字符串
         }
 
-class SatelliteTLEParams(BaseModel):
+class SGP4Param(BaseModel):
     """
-    创建实体为卫星可能需要的参数，之所以是可能，因为所有参数均为可选，允许全空
+    创建创建SGP4卫星轨道参数，允许全空
     """
     # 两行轨道数据，例如：
     # 1 25544U 98067A   23001.75382237  .00000000  00000-0  00000-0  00000-0
@@ -111,18 +126,19 @@ class CommandResponse(TypedDict):
     args: Dict[str, Any]  # 指令执行的参数
     thread_id: str  # 会话 ID
 
-class Operation(TypedDict, total=False):
-    """
-    向平台发出的操作指令
-    """
-    # 指令生成成功与否
-    success: bool
-    # 指令生成与否的原因
-    message: str
-    # 指令参数
-    args: Optional[Dict[str, Any]]
-    # 指令名称
-    func: str
+# 删除以下 Operation 类定义 (原 L130-141)
+# class Operation(TypedDict, total=False):
+#     """
+#     向平台发出的操作指令
+#     """
+#     # 指令生成成功与否
+#     success: bool
+#     # 指令生成与否的原因
+#     message: str
+#     # 指令参数
+#     args: Optional[Dict[str, Any]]
+#     # 指令名称
+#     func: str
 
 
 class SpaceState(TypedDict):

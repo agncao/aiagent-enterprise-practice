@@ -10,7 +10,8 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langgraph.prebuilt import ToolNode
 from infrastructure.config import config
 from infrastructure.logger import log
-from agent.space.space_types import SpaceState, Operation, CommandType
+# 移除 Operation 的导入 (如果存在)
+from agent.space.space_types import SpaceState #, Operation 
 from agent.space.space_read_tool import read_tools
 from agent.space.space_write_tool import write_tools
 from agent.space.utils.langgraph_utils import get_tool_info,valid_tool_call
@@ -99,7 +100,8 @@ def process_tools_output(state: SpaceState):
         更新后的状态
     """
     log.debug("========process_tools_output===========")
-    tool_call_response = state.get("tool_call_response")
+    # 删除 tool_call_response
+    tool_call_response = state.pop("tool_call_response", None)
     if tool_call_response:
         log.info(f"process_tools_output: external result: {tool_call_response}")
         
@@ -110,18 +112,22 @@ def process_tools_output(state: SpaceState):
         message = tool_call_response.get("message", "")
         
         # 展示参数信息
-        call_info=""
+        call_info=f"参数为："
         if args and any(args.values()):
             args_str = "\n- ".join([f"{k} = {v}" for k, v in args.items() if v is not None])
-            call_info = f"参数：\n- {args_str}"
+            call_info = f"{call_info}\n- {args_str}"
+        else:
+            call_info = f"{call_info}\n- 无\n"
 
         if success:
             # 查询类工具，会有返回结果
             if tool_func in [getattr(tool, "name", None) for tool in read_tools]:
-                message = "没有查询到相关数据"
-                if tool_call_response.get("data", []):
+                entitys = tool_call_response.get("data", [])
+                if entitys:
                     data_str = "\n".join([f"- {item}" for item in tool_call_response.get("data", [])])
-                    call_info = f"{call_info}，查询结果：\n{data_str}"
+                    call_info = f"{call_info}\n 查询结果：\n{data_str}"
+                else:
+                    message = "没有查询到相关数据"
         content = f"{message}，{call_info}"
         
         ai_message = AIMessage(content=content)

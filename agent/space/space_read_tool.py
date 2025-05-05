@@ -5,22 +5,8 @@
 这是一个读指令，例如发出查询场景是否存在的指令。
 """
 from langchain_core.tools import tool
-from agent.space.space_types import CommandType,Operation
 from infrastructure.logger import log
 
-# @tool
-# def query_scenario(name) -> dict:
-#     '''
-#     根据场景名称查询场景
-
-#     Args:
-#         name: 场景名称。
-#     Returns:
-#         dict: 查询场景的指令信息
-#     '''
-#     log.info(f"execute tool: query_scenario, input: {name}")
-#     result = Operation(type=CommandType.READ.value,message=f"向平台发送查询场景指令",func="query_scene", args=locals())
-#     return result
 
 @tool
 def query_scenario_entities() -> dict:
@@ -31,7 +17,8 @@ def query_scenario_entities() -> dict:
         dict: 查询场景实体的指令信息
     '''
     log.info(f"execute tool: query_scenario_entities")
-    result = Operation(type=CommandType.READ.value, message=f"向平台发送查询场景实体指令", func="query_scenario_entities", args=None)
+    # 直接返回字典
+    result = {"success": True, "message": f"向平台准备发送查询场景实体指令", "func": "query_scenario_entities", "args": None}
     return result
 
 read_tools = [query_scenario_entities]

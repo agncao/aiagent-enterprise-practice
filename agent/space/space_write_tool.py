@@ -5,9 +5,11 @@
 """
 from typing import List, Optional, Dict, Any, TypedDict
 from langchain_core.tools import tool
-from agent.space.space_types import ScenarioConfig, EntityConfig, SatelliteTLEParams, Operation,get_yesterday_midnight_utc,get_today_midnight_utc,EntityType,EntityPosition
+# 移除 Operation 的导入
+from agent.space.space_types import ScenarioConfig, EntityConfig, SGP4Param, EntityType, EntityPosition, ENTITY_TYPE_TEXT,get_utc_strings
 from infrastructure.logger import log
 from langchain_core.runnables import RunnableConfig
+from datetime import datetime
 
 
 # def default_serializer(obj):
@@ -16,21 +18,28 @@ from langchain_core.runnables import RunnableConfig
 #     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 @tool(args_schema=ScenarioConfig)
-def create_scenario(name, centralBody, startTime, endTime, description='') -> dict:
+def create_scenario(name='新建场景', centralBody='Earth', startTime=None, endTime=None, description="") -> dict:
     """
-    创建空间场景。
+    创建场景。
     
     Args:
         name: 场景名称。
         centralBody: 中心天体。
-        startTime: 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"
-        endTime: 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"
+        startTime: 纪元UTC开始时间，如果未提供,则为None。
+        endTime: 纪元UTC结束时间，如果未提供,则为None。
         description: 场景描述。
 
     Returns:
         dict: 创建空间场景的指令信息
     """
     log.info(f"创建场景工具: {name}, {centralBody}, {startTime}, {endTime}, {description}")
+    
+    if not startTime or not endTime:
+        yesterday, today = get_utc_strings(datetime.now())
+        if not startTime:
+            startTime = yesterday
+        if not endTime:
+            endTime = today
     args = {
         "name": name,
         "centralBody": centralBody,
@@ -38,7 +47,8 @@ def create_scenario(name, centralBody, startTime, endTime, description='') -> di
         "endTime": endTime,
         "description": description
     }
-    return Operation(message=f"向平台发送创建场景指令", func="create_scenario", args=args)
+    res = {"success":True,"message":f"向平台准备发送创建场景指令", "func":"create_scenario", "args":args}
+    return res
 
 
 @tool
@@ -55,59 +65,66 @@ def rename_scenerio(new_name) -> dict:
     args = {
         "name": new_name
     }
-    return Operation(message=f"向平台发送重命名场景指令", func="rename_scenerio", args=args)
+    # 直接返回字典
+    return {"success": True, "message": f"向平台准备发送重命名场景指令", "func": "rename_scenerio", "args": args}
 
 @tool(args_schema=EntityConfig)
 def add_point_entity(
-    entityType: Optional[str] = None,  # 直接使用枚举类型
+    entityType: Optional[str] = None,
     name: Optional[str] = None,
     position: Optional[dict] = None,
     properties: Optional[dict] = None
 ) -> dict:
     """
-    向当前场景添加一个实体(例如：地点、地面站、传感器等)
-    
+    向当前场景添加一个实体(例如：卫星、地面站、传感器等)
+
     Args:
-        entityType: 实体类型。
-        name: 实体名称。
-        position: 实体位置。
-        properties: 实体属性。
+        entityType (Optional[str]): 实体类型。
+        name (Optional[str]): 实体名称。如果未提供，将使用默认值。
+        position (Optional[dict]): 实体位置坐标。
+        properties (Optional[dict]): 实体的其他属性。
     Returns:
         dict: 添加实体的指令信息。
     """
-    # 自动获得经过验证的枚举实例
-    log.info(f"接收到的实体类型：{type(entityType)} {entityType}")
-    
-    # 构造参数时直接使用枚举值
+
+    final_name = name
+    if not final_name and entityType:
+        final_name = ENTITY_TYPE_TEXT.get(entityType, "未命名实体")
+    elif not final_name:
+        final_name = "未命名实体"
+
     args = {
         "entityType": entityType,
-        "name": name or "未命名实体",
+        "name": final_name,
         "position": position,
         "properties": properties or {}
     }
-    return Operation(message="添加实体指令已发送", func="add_point_entity", args=args)
+    log.info(f"add_point_entity: 构造的指令参数: {args}")
+    # 直接返回字典
+    return {"success": True, "message": "向平台准备发送添加实体指令", "func": "add_point_entity", "args": args}
 
-@tool(args_schema=SatelliteTLEParams)
-def add_satellite_entity(
+@tool(args_schema=SGP4Param)
+def create_SGP4_orbit(
     TLEs: Optional[List[str]]=[],
     satellite_number: Optional[str]="",
     start: Optional[str]="",
     end: Optional[str]=""
     ) -> dict:
     """
-    向当前场景添加一个实体类型为卫星的对象
-    允许全空参数
-
+    向当前场景添加SGP4模型计算的卫星轨道。
+    只有当用户请求中包含有'SGP4'或者'轨道'这两个含义时，才会使用SGP4模型计算卫星轨迹。
+    如果单纯的只是添加卫星，不使用SGP4模型计算卫星轨道，那么可以使用add_point_entity工具。
+    
     Args:
         TLEs: 两行轨道数据
         satellite_number: 卫星编号
         start: 纪元UTC开始时间，例如："2021-05-01T00:00:00.000Z"
         end: 纪元UTC结束时间，例如："2021-05-02T00:00:00.000Z"
 
-    Returns: 添加卫星的指令信息。
+    Returns: SGP4卫星轨道计算指令。
     """
         
-    log.info(f"add_satellite_entity 已发送卫星计算指令: SatNo={satellite_number}, start={start}, end={end}, TLEs={TLEs}")
+    log.info(f"add_satellite_entity 已发送SGP4卫星轨道计算指令: SatNo={satellite_number}, start={start}, end={end}, TLEs={TLEs}")
     args = {
         "TLEs": TLEs,
         "satellite_number": satellite_number,
@@ -115,7 +132,8 @@ def add_satellite_entity(
         "end": end
     }
     
-    return Operation(message=f"向平台发送添加卫星指令", func="add_satellite_entity", args=args)
+    # 直接返回字典
+    return {"success": True, "message": f"向平台准备发送添加SGP4卫星指令", "func": "create_SGP4_orbit", "args": args}
 
 @tool
 def clear_entities() -> dict:
@@ -126,7 +144,8 @@ def clear_entities() -> dict:
         dict: 清除实体的指令信息。
     """
     log.info("clear_entities 工具 指令发送")
-    return Operation(message = "向平台发送清除实体指令", func="clear_entities", args=None)
+    # 直接返回字典
+    return {"success": True, "message": "向平台准备发送清除实体指令", "func": "clear_entities", "args": None}
 
 @tool
 def clear_scene() -> dict:
@@ -137,6 +156,7 @@ def clear_scene() -> dict:
         dict: 清除场景的指令信息。
     """
     log.info("clear_scene 工具 已发送指令")
-    return Operation(message = "向平台发送清除场景指令", func="clear_scene", args=None)
+    # 直接返回字典
+    return {"success": True, "message": "向平台准备发送清除场景指令", "func": "clear_scene", "args": None}
 
-write_tools = [create_scenario, rename_scenerio, add_point_entity, add_satellite_entity, clear_entities, clear_scene]
+write_tools = [create_scenario, rename_scenerio, add_point_entity, create_SGP4_orbit, clear_entities, clear_scene]

@@ -11,8 +11,6 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 from infrastructure.logger import log
 from agent.space.space_agent import app
 from agent.space.utils.langgraph_utils import get_tool_info
-from agent.space.space_types import Operation,CommandType
-
 
 class WebSocketMessageHandler:
     """WebSocket 消息处理器，用于处理 LangGraph 应用与 WebSocket 之间的通信"""
