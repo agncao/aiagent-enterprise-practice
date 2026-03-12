@@ -1,7 +1,7 @@
 # 数据库配置
 database:
   dialect: sqlite
-  url: /Users/caojianming/projects/mashibing/etrip-ai/mar15-ctrip-study/ctrip-agent/db/travel.sqlite  # SQLite 数据库文件路径
+  url: /Users/myuser/projects/db/travel.sqlite  # SQLite 数据库文件路径
   echo: false  # 生产环境设为false
   # SQLite 连接池简化配置
   pool_size: 5
@@ -24,27 +24,37 @@ database:
 #   pool_recycle: 3600  # 连接回收时间（秒）
 
 # FastAPI配置
-api:
-  host: "127.0.0.1"
-  port: 8000
-  reload: true  # 热重载
+server:
+  api:
+    host: "127.0.0.1"
+    port: 8000
+    reload: true  # 热重载
+    # 允许跨域请求的源
+  origins: ['http://localhost:8080']
+  white_list: ['/api/login', '/api/register', '/static', '/docs', '/swagger', '/openapi', '/api/auth']
+
+jwt:
+  secret_key: dummy
+  algorithm: HS256
+  access_token_expire_minutes: 30
+
 
 # 智能体配置
 llm:
   temperature: 0.1  # 开发环境低随机性
   verbose: true     # 打印详细日志
-  url: https://dashscope.aliyuncs.com/compatible-mode/v1
-  api_key: 
-  model_name: qwen3-max
+  url: http://127.0.0.1:6006/v1
+  model_name: Qwen3-8B
+  api_key: dummy
   temperature: 1
   max_tokens: 2000
 graph:
   checkpointer:
     type: sqlite
-    url: /Users/caojianming/projects/mashibing/etrip-ai/mar15-ctrip-study/ctrip-agent/db/ctrip_graph_checkpoint.db
+    url: /Users/myuser/projects/db/graph_checkpoint.db
 embedding:
   model: text-embedding-v4
-  api_key: 
+  api_key: dummy
   dimension: 1024
   
 # 新增日志配置
@@ -56,12 +66,12 @@ logging:
       formatter: "default"
   # 开发环境日志文件（可选）
   file:
-    path: "logs/ctrip_assistant_dev.log"
+    path: "logs/enterprise_practice_dev.log"
     max_size: "10MB"
     backup_count: 5
 
 tavily:
-  api_key: 
+  api_key: dummy
 
 order_faq:
-  path: /Users/caojianming/projects/mashibing/etrip-ai/mar15-ctrip-study/ctrip-agent/db/order_faq.md
+  path: /Users/myuser/projects/db/order_faq.md

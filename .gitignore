@@ -33,3 +33,5 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+**/**/dev.md

@@ -1,3 +1,7 @@
+'''
+用户gradio生成了 一个聊天界面的测试页面
+'''
+
 import uuid
 from app.multi_agent.workflow.primary_workflow import build_primary_workflow
 from app.multi_agent.workflow.init_db import update_dates
