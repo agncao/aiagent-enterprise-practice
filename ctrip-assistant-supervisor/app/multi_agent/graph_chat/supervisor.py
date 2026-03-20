@@ -1,10 +1,11 @@
 from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.multi_agent.llm import llm
 from app.multi_agent.graph_chat.task_handoff import build_handoff_tools
 
 
-def build_supervisor():
+def build_supervisor(memory: InMemorySaver):
     return create_agent(
         tools=build_handoff_tools(),
         model=llm,

@@ -1,4 +1,5 @@
 from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.multi_agent.llm import llm
 from app.multi_agent.graph_chat.task_handoff import create_task_handoff_tool
@@ -30,12 +31,13 @@ from app.multi_agent.tools.trip_recommendation_tools import (
 )
 
 
-def build_sub_agents():
+def build_sub_agents(memory: InMemorySaver):
     return [
         create_agent(
         model=llm,
         tools=[search_car_rentals, book_car_rental, update_car_rental_dates, cancel_car_rental],
         name="car_rental_agent",
+        checkpointer=memory,
         system_prompt=(
             "你是专门处理租车查询，租车预订，租车订单修改的智能体(Agent)。\n\n"
             "指令：\n"
@@ -49,6 +51,7 @@ def build_sub_agents():
         model=llm,
         tools=[search_hotels, book_hotel, update_hotel_dates, cancel_hotel],
         name="hotel_agent",
+        checkpointer=memory,
         system_prompt=(
             "你是专门处理酒店查询，酒店预定，酒店订单修改的智能体(Agent)。\n\n"
             "指令：\n"
@@ -62,6 +65,7 @@ def build_sub_agents():
         model=llm,
         tools=[search_flights, fetch_user_flight_information, update_ticket_to_new_flight, cancel_ticket,lookup_policy],
         name="flight_agent",
+        checkpointer=memory,
         system_prompt=(
             "你是专门处理航班查询，改签政策查询，改签和预定的智能体(Agent)。\n\n"
             "指令：\n"
@@ -74,6 +78,7 @@ def build_sub_agents():
         model=llm,
         tools=[search_trip_recommendations, book_excursion, update_excursion_details, cancel_excursion],
         name="trip_recommendation_agent",
+        checkpointer=memory,
         system_prompt=(
             "你是专门处理旅行推荐查询，旅行产品预定，旅行订单修改的智能体(Agent)。\n\n"
             "指令：\n"
@@ -87,6 +92,7 @@ def build_sub_agents():
         model=llm,
         tools=[tavily_tool],
         name="tavily_search_agent",
+        checkpointer=memory,
         system_prompt=(
             "你是一个网络搜索的智能体(Agent)。\n\n"
             "指令：\n"
