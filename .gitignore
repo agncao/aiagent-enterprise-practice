@@ -35,3 +35,4 @@ htmlcov/
 .DS_Store
 
 **/**/dev.md
+db/
