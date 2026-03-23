@@ -4,8 +4,8 @@
 ## 步骤1: 启动你的 FastAPI 业务应用 （包含了 SSE MCP）：python main.py
 ## 步骤2: 启动 MCP Inspector 并连接到你的 SSE 服务 ：
 ##      打开一个新的终端，使用 npx 运行 inspector，并指定 SSE 端的 URL:
-##          命令: @modelcontextprotocol/inspector sse "http://127.0.0.1:8000/mcp/sse"
-## 步骤3: 在浏览器中测试，地址通常是: http://localhost:8256/inspector
+##          命令: npx @modelcontextprotocol/inspector sse "http://127.0.0.1:8000/mcp/sse"
+## 步骤3: 在浏览器中测试
 ##      Inspector 启动后，会提示你在浏览器中打开一个地址（通常是 http://localhost:5173 ）。
 #       打开后，你就能在可视化界面中看到你发布的所有工具（如 mcp_search_flights 、 mcp_search_hotels 等），并可以直接在界面上填写参数点击运行，查看 JSON 返回结果。
 
@@ -29,8 +29,9 @@ class Server:
     def __init__(self):
         # 创建自定义的OAuth2的实例
         my_oauth2 = MyOAuth2PasswordBearer(tokenUrl='/api/auth/', schema='JWT')
-        # 添加全局的依赖: 让所有的接口，都拥有接口文档的认证
+        # # 添加全局的依赖: 让所有的接口，都拥有接口文档的认证
         self.app = FastAPI(dependencies=[Depends(my_oauth2)])
+
         # 把项目下的static目录作为静态文件的访问目录
         static_dir = Path(__file__).resolve().parent / "static"
         if static_dir.exists():

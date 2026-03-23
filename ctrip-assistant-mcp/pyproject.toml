@@ -25,6 +25,7 @@ dependencies = [
   "dashscope>=1.20.0",
   "pandas>=2.0.0",
   "gradio>=4.0.0",
+  "platformdirs>=3.6.0,<5",
   # 认证相关
   "python-jose[cryptography]>=3.3.0",
   "passlib[bcrypt]>=1.7.0",

@@ -31,7 +31,7 @@ server:
     reload: true  # 热重载
     # 允许跨域请求的源
   origins: ['http://localhost:8080']
-  white_list: ['/api/login', '/api/register', '/static', '/docs', '/swagger', '/openapi', '/api/auth']
+  white_list: ['/api/login', '/api/register', '/api/auth', '/docs', '/openapi.json', '/static', '/mcp.*']
 
 jwt:
   secret_key: dummy
